@@ -1,0 +1,37 @@
+id,english_title,japanese_title
+1,The Great Wave off Kanagawa,神奈川沖浪裏
+2,"Fine Wind, Clear Morning",凱風快晴
+3,Thunderstorm Beneath the Summit,山下白雨
+4,Under Mannen Bridge at Fukagawa,深川万年橋下
+5,"Sundai, Edo",東都駿台
+6,Cushion Pine at Aoyama,青山円座松
+7,"Senju, Musashi But",武州千住
+8,"Inume Pass, Kōshū",甲州犬目峠
+9,Fuji View Field in Owari Province,尾州不二見原
+10,Ejiri in Suruga Province,駿州江尻
+11,A sketch of the Mitsui shop in Suruga in Edo,江都駿河町三井見世略図
+12,Sunset across the Ryōgoku bridge from the bank of the Sumida River at Onmayagashi,御厩川岸より両国橋夕陽見
+13,Sazai hall - Temple of Five Hundred Rakan,五百らかん寺さざゐどう
+14,Tea house at Koishikawa. The morning after a snowfall,礫川雪の旦
+15,Shimomeguro,下目黒
+16,Watermill at Onden,隠田の水車
+17,Enoshima in Sagami Province,相州江の島
+18,"Shore of Tago Bay, Ejiri at Tōkaidō",東海道江尻田子の浦略図
+19,Yoshida at Tōkaidō,東海道吉田
+20,The Kazusa Province sea route,上総の海路
+21,Nihonbashi bridge in Edo,江戸日本橋
+22,Barrier Town on the Sumida River,隅田川関屋の里
+23,Bay of Noboto,登戸浦
+24,The lake of Hakone in Sagami Province,相州箱根湖水
+25,"Mount Fuji reflects in Lake Kawaguchi, seen from the Misaka Pass in Kai Province",甲州三坂水面
+26,Hodogaya on the Tōkaidō,東海道保土ケ谷
+27,Tama River in Musashi Province,武州玉川
+28,Asakusa Hongan-ji temple in the Eastern capital,東都浅草本願寺
+29,Tsukuda Island in Musashi Province,武陽佃島
+30,Shichiri beach in Sagami Province,相州七里浜
+31,Umezawa in Sagami Province,相州梅沢庄
+32,Kajikazawa in Kai Province,甲州石班沢
+33,Mishima Pass in Kai Province,甲州三嶌越
+34,Mount Fuji from the mountains of Tōtōmi,遠江山中
+35,A View of Mount Fuji Across Lake Suwa,信州諏訪湖
+36,Ushibori in Hitachi Province,常州牛掘

@@ -1,0 +1,32 @@
+{
+    "FeelsLikeC": "40",
+    "FeelsLikeF": "103",
+    "cloudcover": "50",
+    "humidity": "75",
+    "localObsDateTime": "2025-08-21 02:16 PM",
+    "observation_time": "02:16 PM",
+    "precipInches": "0.1",
+    "precipMM": "1.9",
+    "pressure": "1012",
+    "pressureInches": "30",
+    "temp_C": "30",
+    "temp_F": "87",
+    "uvIndex": "2",
+    "visibility": "10",
+    "visibilityMiles": "6",
+    "weatherCode": "116",
+    "weatherDesc": [
+        {
+            "value": "Partly cloudy"
+        }
+    ],
+    "weatherIconUrl": [
+        {
+            "value": ""
+        }
+    ],
+    "winddir16Point": "N",
+    "winddirDegree": "2",
+    "windspeedKmph": "12",
+    "windspeedMiles": "7"
+}
