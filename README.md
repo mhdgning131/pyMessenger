@@ -3,6 +3,8 @@
 **End-to-End Encrypted Messaging System**
 
 A secure, terminal-based messaging application implementing modern cryptographic protocols for private communication.
+<img width="720" height="306" alt="image" src="https://github.com/user-attachments/assets/60d51210-5187-4a5a-93b9-29c94fe867cc" />
+
 
 ---
 
