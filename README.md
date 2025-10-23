@@ -456,4 +456,4 @@ MIT Licence
 
 ## Authors
 
-(Mohamed G.)[https://mohamedg.me] - M. M. Sabaly
+[Mohamed G.](https://mohamedg.me) - M. M. Sabaly
