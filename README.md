@@ -387,11 +387,11 @@ Users can be mentioned in messages using `@username`:
 - **Perfect forward secrecy** - RSA-wrapped keys for each chunk
 
 **Features:**
-- 🔐 End-to-end encrypted (AES-256)
-- 📁 Automatic folder management
-- ✅ Accept/reject system
-- 📊 Real-time progress updates
-- 🏷️ Files prefixed with sender username
+->  End-to-end encrypted (AES-256)
+-> Automatic folder management
+-> Accept/reject system
+-> Real-time progress updates
+-> Files prefixed with sender username
 
 See [FILE_SHARING.md](FILE_SHARING.md) for complete documentation.
 
