@@ -80,15 +80,22 @@ class KeyManager:
     def __init__(self):
         self.config_dir = Path.home() / '.secure_messenger_client'
         self.keys_dir = self.config_dir / 'keys'
+        self.files_dir = self.config_dir / 'files'
+        self.received_dir = self.files_dir / 'received'
+        self.sent_dir = self.files_dir / 'sent'
         self._initialize_directories()
     
     def _initialize_directories(self):
         """Create necessary directories."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.keys_dir.mkdir(parents=True, exist_ok=True)
+        self.files_dir.mkdir(parents=True, exist_ok=True)
+        self.received_dir.mkdir(parents=True, exist_ok=True)
+        self.sent_dir.mkdir(parents=True, exist_ok=True)
         if os.name != 'nt':
             os.chmod(self.config_dir, 0o700)
             os.chmod(self.keys_dir, 0o700)
+            os.chmod(self.files_dir, 0o700)
     
     def _derive_key(self, password, salt):
         """Derive encryption key from password."""
@@ -166,6 +173,12 @@ class Client:
         # Pending room invitation
         self.pending_invite = None  # {'from': username, 'invite_id': id}
         self.invite_lock = threading.Lock()
+        
+        # File transfer tracking
+        self.pending_file_offers = {}  # file_id -> {'from': username, 'filename': str, 'filesize': int}
+        self.active_file_transfers = {}  # file_id -> {'chunks': {}, 'total': int, 'filename': str, 'from': str}
+        self.pending_file_sends = {}  # file_id -> {'target': username, 'file_path': Path}
+        self.file_lock = threading.Lock()
         
         # SSL/TLS setup
         self.ssl_context = self._setup_ssl()
@@ -638,6 +651,9 @@ class Client:
         print_formatted_text(ANSI(f"  {theme_color}/room <user>{RESET}        Enter private room with user"))
         print_formatted_text(ANSI(f"  {theme_color}/leave{RESET}              Leave private room (return to broadcast)"))
         print_formatted_text(ANSI(f"  {theme_color}/msg <user> <text>{RESET}  Send single private message"))
+        print_formatted_text(ANSI(f"  {theme_color}/sendfile <user> <path>{RESET}  Send file to user"))
+        print_formatted_text(ANSI(f"  {theme_color}/acceptfile [#]{RESET}     Accept pending file transfer"))
+        print_formatted_text(ANSI(f"  {theme_color}/rejectfile [#]{RESET}     Reject pending file transfer"))
         print_formatted_text(ANSI(f"  {theme_color}/history [count]{RESET}    View message history"))
         print_formatted_text(ANSI(f"  {theme_color}/users{RESET}              List online users"))
         print_formatted_text(ANSI(f"  {theme_color}/clear{RESET}              Clear screen"))
@@ -778,6 +794,18 @@ class Client:
             print_formatted_text(ANSI(f"  {theme_color}/msg <user> <message>{RESET}"))
             print_formatted_text(ANSI(f"    Send a single private message without entering a room."))
             print_formatted_text(ANSI(f""))
+            print_formatted_text(ANSI(f"  {theme_color}/sendfile <user> <filepath>{RESET}"))
+            print_formatted_text(ANSI(f"    Send a file to <user>. Files are encrypted end-to-end."))
+            print_formatted_text(ANSI(f"    Example: /sendfile alice ~/Documents/report.pdf"))
+            print_formatted_text(ANSI(f""))
+            print_formatted_text(ANSI(f"  {theme_color}/acceptfile [number]{RESET}"))
+            print_formatted_text(ANSI(f"    Accept a pending file transfer. Use without number to"))
+            print_formatted_text(ANSI(f"    see all pending offers. Files saved to:"))
+            print_formatted_text(ANSI(f"    ~/.secure_messenger_client/files/received/"))
+            print_formatted_text(ANSI(f""))
+            print_formatted_text(ANSI(f"  {theme_color}/rejectfile [number]{RESET}"))
+            print_formatted_text(ANSI(f"    Reject a pending file transfer offer."))
+            print_formatted_text(ANSI(f""))
             print_formatted_text(ANSI(f"  {theme_color}/users{RESET}"))
             print_formatted_text(ANSI(f"    List all online users."))
             print_formatted_text(ANSI(f""))
@@ -806,6 +834,102 @@ class Client:
                         else:
                             print_formatted_text(ANSI(f"  {theme_color}{i}.{RESET} {user}"))
                 print_formatted_text(ANSI(""))
+        
+        elif command == '/sendfile' and len(parts) >= 3:
+            target = parts[1]
+            filepath = parts[2]
+            
+            # Check if target is online
+            if target not in self.peer_keys:
+                print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' is not online.{RESET}"))
+                return
+            
+            # Check if file exists
+            file_path = Path(filepath).expanduser()
+            if not file_path.exists():
+                print_formatted_text(ANSI(f"{RED}✗ File not found: {filepath}{RESET}"))
+                return
+            
+            if not file_path.is_file():
+                print_formatted_text(ANSI(f"{RED}✗ Not a file: {filepath}{RESET}"))
+                return
+            
+            # Start file transfer in separate thread
+            threading.Thread(
+                target=self.send_file,
+                args=(target, file_path),
+                daemon=True
+            ).start()
+        
+        elif command == '/acceptfile':
+            # Accept pending file offer
+            with self.file_lock:
+                if not self.pending_file_offers:
+                    print_formatted_text(ANSI(f"{YELLOW}⚠ No pending file offers.{RESET}"))
+                    return
+                
+                # Show pending offers
+                if len(parts) < 2:
+                    print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Pending file offers:{RESET}"))
+                    for i, (file_id, offer) in enumerate(self.pending_file_offers.items(), 1):
+                        size_mb = offer['filesize'] / (1024 * 1024)
+                        print_formatted_text(ANSI(f"  {CYAN}{i}.{RESET} {offer['filename']} ({size_mb:.2f} MB) from {offer['from']}"))
+                        print_formatted_text(ANSI(f"     File ID: {file_id}"))
+                    print_formatted_text(ANSI(f"\n{GRAY}Usage: /acceptfile <number>{RESET}\n"))
+                    return
+                
+                try:
+                    choice = int(parts[1]) - 1
+                    file_id = list(self.pending_file_offers.keys())[choice]
+                    offer = self.pending_file_offers[file_id]
+                except (ValueError, IndexError):
+                    print_formatted_text(ANSI(f"{RED}✗ Invalid selection{RESET}"))
+                    return
+            
+            # Send acceptance
+            send_json(self.client_socket, {
+                'type': 'file_response',
+                'file_id': file_id,
+                'accepted': True,
+                'sender': offer['from']
+            })
+            
+            print_formatted_text(ANSI(f"{GREEN}✓ Accepting file: {offer['filename']}{RESET}"))
+            print_formatted_text(ANSI(f"{GRAY}  Waiting for transfer to begin...{RESET}\n"))
+        
+        elif command == '/rejectfile':
+            # Reject pending file offer
+            with self.file_lock:
+                if not self.pending_file_offers:
+                    print_formatted_text(ANSI(f"{YELLOW}⚠ No pending file offers.{RESET}"))
+                    return
+                
+                # Show pending offers
+                if len(parts) < 2:
+                    print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Pending file offers:{RESET}"))
+                    for i, (file_id, offer) in enumerate(self.pending_file_offers.items(), 1):
+                        size_mb = offer['filesize'] / (1024 * 1024)
+                        print_formatted_text(ANSI(f"  {CYAN}{i}.{RESET} {offer['filename']} ({size_mb:.2f} MB) from {offer['from']}"))
+                    print_formatted_text(ANSI(f"\n{GRAY}Usage: /rejectfile <number>{RESET}\n"))
+                    return
+                
+                try:
+                    choice = int(parts[1]) - 1
+                    file_id = list(self.pending_file_offers.keys())[choice]
+                    offer = self.pending_file_offers.pop(file_id)
+                except (ValueError, IndexError):
+                    print_formatted_text(ANSI(f"{RED}✗ Invalid selection{RESET}"))
+                    return
+            
+            # Send rejection
+            send_json(self.client_socket, {
+                'type': 'file_response',
+                'file_id': file_id,
+                'accepted': False,
+                'sender': offer['from']
+            })
+            
+            print_formatted_text(ANSI(f"{YELLOW}✗ Rejected file: {offer['filename']}{RESET}\n"))
                 
         elif command == '/clear':
             self.show_chat_interface()
@@ -846,6 +970,215 @@ class Client:
         }
         
         send_json(self.client_socket, envelope)
+    
+    def send_file(self, target, file_path):
+        """Send a file to target user."""
+        try:
+            import secrets
+            
+            # Generate unique file ID
+            file_id = secrets.token_urlsafe(16)
+            filename = file_path.name
+            filesize = file_path.stat().st_size
+            
+            print_formatted_text(ANSI(f"\n{CYAN}→ Preparing to send file:{RESET}"))
+            print_formatted_text(ANSI(f"  {WHITE}File:{RESET} {filename}"))
+            print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {filesize / (1024*1024):.2f} MB"))
+            print_formatted_text(ANSI(f"  {WHITE}To:{RESET} {target}\n"))
+            
+            # Store pending send info
+            with self.file_lock:
+                self.pending_file_sends[file_id] = {
+                    'target': target,
+                    'file_path': file_path
+                }
+            
+            # Send file offer
+            send_json(self.client_socket, {
+                'type': 'file_offer',
+                'target': target,
+                'filename': filename,
+                'filesize': filesize,
+                'file_id': file_id
+            })
+            
+            print_formatted_text(ANSI(f"{GRAY}Waiting for {target} to accept...{RESET}\n"))
+            
+        except Exception as e:
+            print_formatted_text(ANSI(f"{RED}✗ File send error: {e}{RESET}\n"))
+    
+    def send_file_chunks(self, target, file_path, file_id):
+        """Send file in encrypted chunks."""
+        try:
+            CHUNK_SIZE = 64 * 1024  # 64 KB chunks
+            
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+            
+            total_chunks = (len(file_data) + CHUNK_SIZE - 1) // CHUNK_SIZE
+            
+            print_formatted_text(ANSI(f"{CYAN}→ Sending file in {total_chunks} chunks...{RESET}"))
+            
+            for chunk_num in range(1, total_chunks + 1):
+                start = (chunk_num - 1) * CHUNK_SIZE
+                end = min(start + CHUNK_SIZE, len(file_data))
+                chunk = file_data[start:end]
+                
+                # Encrypt chunk with AES
+                aes_key = get_random_bytes(32)
+                aes_cipher = AES.new(aes_key, AES.MODE_EAX)
+                encrypted_chunk, tag = aes_cipher.encrypt_and_digest(chunk)
+                
+                # Encrypt AES key with recipient's public key
+                pub = self.peer_keys.get(target)
+                if not pub:
+                    print_formatted_text(ANSI(f"{RED}✗ Recipient went offline{RESET}\n"))
+                    return False
+                
+                rsa_cipher = PKCS1_OAEP.new(pub)
+                encrypted_key = rsa_cipher.encrypt(aes_key)
+                
+                # Send encrypted chunk
+                send_json(self.client_socket, {
+                    'type': 'file_transfer',
+                    'target': target,
+                    'file_id': file_id,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'encrypted_chunk': base64.b64encode(encrypted_chunk).decode('utf-8'),
+                    'nonce': base64.b64encode(aes_cipher.nonce).decode('utf-8'),
+                    'tag': base64.b64encode(tag).decode('utf-8'),
+                    'encrypted_key': base64.b64encode(encrypted_key).decode('utf-8')
+                })
+                
+                # Show progress
+                if chunk_num % 10 == 0 or chunk_num == total_chunks:
+                    progress = (chunk_num / total_chunks) * 100
+                    print_formatted_text(ANSI(f"{GRAY}  Progress: {progress:.1f}% ({chunk_num}/{total_chunks}){RESET}"))
+            
+            print_formatted_text(ANSI(f"{GREEN}✓ File sent successfully!{RESET}\n"))
+            
+            # Save to sent folder for record
+            sent_path = self.key_manager.sent_dir / file_path.name
+            import shutil
+            shutil.copy2(file_path, sent_path)
+            
+            return True
+            
+        except Exception as e:
+            print_formatted_text(ANSI(f"{RED}✗ Error sending file: {e}{RESET}\n"))
+            return False
+    
+    def send_file_chunks_by_id(self, file_id):
+        """Send file chunks using stored file_id."""
+        try:
+            with self.file_lock:
+                if file_id not in self.pending_file_sends:
+                    print_formatted_text(ANSI(f"{RED}✗ File transfer info not found{RESET}\n"))
+                    return
+                
+                send_info = self.pending_file_sends.pop(file_id)
+            
+            target = send_info['target']
+            file_path = send_info['file_path']
+            
+            return self.send_file_chunks(target, file_path, file_id)
+            
+        except Exception as e:
+            print_formatted_text(ANSI(f"{RED}✗ Error initiating file send: {e}{RESET}\n"))
+            return False
+    
+    def receive_file_chunk(self, pkg):
+        """Receive and process file chunk."""
+        try:
+            file_id = pkg.get('file_id')
+            sender = pkg.get('from')
+            chunk_num = pkg.get('chunk_num')
+            total_chunks = pkg.get('total_chunks')
+            encrypted_chunk = base64.b64decode(pkg.get('encrypted_chunk'))
+            nonce = base64.b64decode(pkg.get('nonce'))
+            tag = base64.b64decode(pkg.get('tag'))
+            encrypted_key = base64.b64decode(pkg.get('encrypted_key'))
+            
+            # Decrypt AES key
+            rsa_cipher = PKCS1_OAEP.new(self.rsa_key)
+            aes_key = rsa_cipher.decrypt(encrypted_key)
+            
+            # Decrypt chunk
+            aes_cipher = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+            chunk = aes_cipher.decrypt_and_verify(encrypted_chunk, tag)
+            
+            # Store chunk
+            with self.file_lock:
+                if file_id not in self.active_file_transfers:
+                    # Initialize transfer tracking
+                    offer = self.pending_file_offers.get(file_id, {})
+                    self.active_file_transfers[file_id] = {
+                        'chunks': {},
+                        'total': total_chunks,
+                        'filename': offer.get('filename', 'unknown'),
+                        'from': sender
+                    }
+                    # Remove from pending
+                    self.pending_file_offers.pop(file_id, None)
+                
+                self.active_file_transfers[file_id]['chunks'][chunk_num] = chunk
+                
+                received = len(self.active_file_transfers[file_id]['chunks'])
+                
+                # Show progress
+                if chunk_num % 10 == 0 or chunk_num == total_chunks:
+                    progress = (received / total_chunks) * 100
+                    print_formatted_text(ANSI(f"{GRAY}  Receiving: {progress:.1f}% ({received}/{total_chunks}){RESET}"))
+                
+                # Check if complete
+                if received == total_chunks:
+                    self.finalize_file_transfer(file_id)
+        
+        except Exception as e:
+            print_formatted_text(ANSI(f"{RED}✗ Error receiving file chunk: {e}{RESET}\n"))
+    
+    def finalize_file_transfer(self, file_id):
+        """Assemble and save complete file."""
+        try:
+            transfer = self.active_file_transfers[file_id]
+            filename = transfer['filename']
+            sender = transfer['from']
+            
+            # Assemble chunks in order
+            complete_data = b''
+            for i in range(1, transfer['total'] + 1):
+                complete_data += transfer['chunks'][i]
+            
+            # Save file to received folder with sender prefix
+            safe_filename = f"{sender}_{filename}"
+            save_path = self.key_manager.received_dir / safe_filename
+            
+            # Handle duplicate filenames
+            counter = 1
+            while save_path.exists():
+                name_parts = filename.rsplit('.', 1)
+                if len(name_parts) == 2:
+                    safe_filename = f"{sender}_{name_parts[0]}_{counter}.{name_parts[1]}"
+                else:
+                    safe_filename = f"{sender}_{filename}_{counter}"
+                save_path = self.key_manager.received_dir / safe_filename
+                counter += 1
+            
+            with open(save_path, 'wb') as f:
+                f.write(complete_data)
+            
+            print_formatted_text(ANSI(f"\n{GREEN}✓ File received successfully!{RESET}"))
+            print_formatted_text(ANSI(f"  {WHITE}From:{RESET} {sender}"))
+            print_formatted_text(ANSI(f"  {WHITE}Saved as:{RESET} {safe_filename}"))
+            print_formatted_text(ANSI(f"  {WHITE}Location:{RESET} {save_path}"))
+            print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {len(complete_data) / (1024*1024):.2f} MB\n"))
+            
+            # Cleanup
+            del self.active_file_transfers[file_id]
+            
+        except Exception as e:
+            print_formatted_text(ANSI(f"{RED}✗ Error finalizing file transfer: {e}{RESET}\n"))
 
     def receive_messages(self):
         """Handle incoming messages."""
@@ -975,6 +1308,68 @@ class Client:
                     reason = pkg.get('reason', 'Unknown error')
                     
                     print_formatted_text(ANSI(f"\n{RED}✗ Room invitation failed: {reason}{RESET}\n"))
+                
+                # Handle incoming file offer
+                elif ptype == 'file_offer':
+                    sender = pkg.get('from')
+                    filename = pkg.get('filename')
+                    filesize = pkg.get('filesize')
+                    file_id = pkg.get('file_id')
+                    
+                    with self.file_lock:
+                        self.pending_file_offers[file_id] = {
+                            'from': sender,
+                            'filename': filename,
+                            'filesize': filesize
+                        }
+                    
+                    size_mb = filesize / (1024 * 1024)
+                    
+                    print_formatted_text(ANSI(""))
+                    print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
+                    print_formatted_text(ANSI(f"{CYAN}{BOLD}  📁 FILE TRANSFER REQUEST{RESET}"))
+                    print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
+                    print_formatted_text(ANSI(f"  {WHITE}{sender}{RESET} wants to send you a file:"))
+                    print_formatted_text(ANSI(f""))
+                    print_formatted_text(ANSI(f"  {WHITE}Filename:{RESET} {filename}"))
+                    print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {size_mb:.2f} MB"))
+                    print_formatted_text(ANSI(f""))
+                    print_formatted_text(ANSI(f"  Type {GREEN}/acceptfile 1{RESET} to accept"))
+                    print_formatted_text(ANSI(f"  Type {RED}/rejectfile 1{RESET} to reject"))
+                    print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
+                    print_formatted_text(ANSI(""))
+                
+                # Handle file offer failed
+                elif ptype == 'file_offer_failed':
+                    file_id = pkg.get('file_id')
+                    reason = pkg.get('reason', 'Unknown error')
+                    
+                    print_formatted_text(ANSI(f"{RED}✗ File offer failed: {reason}{RESET}\n"))
+                
+                # Handle file response (accept/reject from recipient)
+                elif ptype == 'file_response':
+                    file_id = pkg.get('file_id')
+                    accepted = pkg.get('accepted')
+                    recipient = pkg.get('recipient')
+                    
+                    if accepted:
+                        print_formatted_text(ANSI(f"{GREEN}✓ {recipient} accepted your file!{RESET}"))
+                        print_formatted_text(ANSI(f"{CYAN}→ Starting file transfer...{RESET}\n"))
+                        
+                        # Start sending file chunks in a separate thread
+                        # We need to find the file path - for now, we'll need to track this
+                        # In a real implementation, store the file_id -> file_path mapping
+                        threading.Thread(
+                            target=self.send_file_chunks_by_id,
+                            args=(file_id,),
+                            daemon=True
+                        ).start()
+                    else:
+                        print_formatted_text(ANSI(f"{YELLOW}✗ {recipient} rejected your file.{RESET}\n"))
+                
+                # Handle incoming file chunk
+                elif ptype == 'file_transfer':
+                    self.receive_file_chunk(pkg)
 
             except Exception:
                 if self.running:

@@ -351,6 +351,9 @@ python3 client.py
 | `/room <user>` | Enter private room with user |
 | `/leave` | Leave private room |
 | `/msg <user> <text>` | Send single private message |
+| `/sendfile <user> <path>` | Send file to user (encrypted) |
+| `/acceptfile [#]` | Accept pending file transfer |
+| `/rejectfile [#]` | Reject pending file transfer |
 | `/users` | List online users |
 | `/history [count]` | View message history (default: 20) |
 | `/clear` | Clear screen |
@@ -363,6 +366,35 @@ Users can be mentioned in messages using `@username`:
 - Mentions highlighted in sender's and recipient's view
 - Visual notification when you're mentioned
 
+### File Sharing
+
+**Send Files:**
+```bash
+/sendfile alice ~/Documents/report.pdf
+```
+
+**Receive Files:**
+- Files automatically saved to `~/.secure_messenger_client/files/received/`
+- Accept or reject incoming files with `/acceptfile` or `/rejectfile`
+- Files are encrypted end-to-end in 64KB chunks
+- Progress tracking during transfer
+
+**Security Model:**
+- **End-to-end encrypted** - Server cannot decrypt files
+- **Zero server storage** - Files never saved on server
+- **Chunk-based transfer** - Each 64KB chunk separately encrypted
+- **Per-chunk keys** - Unique AES-256 key per chunk
+- **Perfect forward secrecy** - RSA-wrapped keys for each chunk
+
+**Features:**
+- 🔐 End-to-end encrypted (AES-256)
+- 📁 Automatic folder management
+- ✅ Accept/reject system
+- 📊 Real-time progress updates
+- 🏷️ Files prefixed with sender username
+
+See [FILE_SHARING.md](FILE_SHARING.md) for complete documentation.
+
 ---
 
 ## File Structure
@@ -374,18 +406,27 @@ pyMessenger/
 ├── user_store.py            # User database and authentication
 ├── generate_certificates.py  # SSL certificate generator
 ├── requirements.txt         # Python dependencies
-└── README.md               # This file
+├── README.md               # This file
+├── FILE_SHARING.md         # File sharing documentation
+└── IMPLEMENTATION_SUMMARY.md # Technical implementation details
 
-ON LINUX/UNOX:
+ON LINUX/UNIX:
 User Data:
 ~/.secure_messenger_client/
-└── keys/
-    └── {username}_private.key  # Encrypted private key
+├── keys/
+│   └── {username}_private.key  # Encrypted private key
+└── files/
+    ├── received/               # Files received from others
+    └── sent/                   # Copies of sent files
+
 ON WINDOWS:
 User Data:
 C:\Users\[YOUR_USER]\.secure_messenger_client\
-└── keys/
-    └── {username}_private.key  # Encrypted private key
+├── keys/
+│   └── {username}_private.key  # Encrypted private key
+└── files/
+    ├── received/               # Files received from others
+    └── sent/                   # Copies of sent files
 
 ~/.secure_messenger/
 ├── certs/

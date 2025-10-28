@@ -581,6 +581,117 @@ class Server:
                                 'type': 'error',
                                 'msg': f'User {target} not found'
                             })
+                
+                # Handle file offer - relay to target user
+                elif ptype == 'file_offer':
+                    target = pkg.get('target')
+                    filename = pkg.get('filename')
+                    filesize = pkg.get('filesize')
+                    file_id = pkg.get('file_id')
+                    
+                    print(f"{BLUE}[i]{RESET} File offer from {client_name} to {target}: {filename} ({filesize} bytes)")
+                    
+                    with self.lock:
+                        # Find target user socket
+                        target_socket = None
+                        for token, info in self.clients.items():
+                            if info['name'] == target:
+                                target_socket = info['socket']
+                                break
+                        
+                        if target_socket:
+                            # Forward file offer to target
+                            success = self.send_json(target_socket, {
+                                'type': 'file_offer',
+                                'from': client_name,
+                                'filename': filename,
+                                'filesize': filesize,
+                                'file_id': file_id
+                            })
+                            
+                            if success:
+                                print(f"{GREEN}[✓]{RESET} File offer relayed to {target}")
+                            else:
+                                print(f"{RED}[x]{RESET} Failed to relay file offer to {target}")
+                                # Notify sender
+                                self.send_json(client_socket, {
+                                    'type': 'file_offer_failed',
+                                    'file_id': file_id,
+                                    'reason': 'Failed to contact recipient'
+                                })
+                        else:
+                            print(f"{YELLOW}[!]{RESET} Target user {target} not found")
+                            # Notify sender that target is offline
+                            self.send_json(client_socket, {
+                                'type': 'file_offer_failed',
+                                'file_id': file_id,
+                                'reason': 'User not online'
+                            })
+                
+                # Handle file response (accept/reject)
+                elif ptype == 'file_response':
+                    file_id = pkg.get('file_id')
+                    accepted = pkg.get('accepted')
+                    sender = pkg.get('sender')  # Original sender of the file
+                    
+                    print(f"{BLUE}[i]{RESET} File response from {client_name}: {'Accepted' if accepted else 'Rejected'} (file_id: {file_id})")
+                    
+                    with self.lock:
+                        # Find sender's socket
+                        sender_socket = None
+                        for token, info in self.clients.items():
+                            if info['name'] == sender:
+                                sender_socket = info['socket']
+                                break
+                        
+                        if sender_socket:
+                            # Forward response to sender
+                            self.send_json(sender_socket, {
+                                'type': 'file_response',
+                                'file_id': file_id,
+                                'accepted': accepted,
+                                'recipient': client_name
+                            })
+                            
+                            print(f"{GREEN}[✓]{RESET} File response relayed to {sender}")
+                        else:
+                            print(f"{YELLOW}[!]{RESET} Sender {sender} not found")
+                
+                # Handle file transfer - relay encrypted chunks
+                elif ptype == 'file_transfer':
+                    target = pkg.get('target')
+                    file_id = pkg.get('file_id')
+                    chunk_num = pkg.get('chunk_num')
+                    total_chunks = pkg.get('total_chunks')
+                    encrypted_chunk = pkg.get('encrypted_chunk')
+                    nonce = pkg.get('nonce')
+                    tag = pkg.get('tag')
+                    encrypted_key = pkg.get('encrypted_key')
+                    
+                    with self.lock:
+                        # Find target socket
+                        target_socket = None
+                        for token, info in self.clients.items():
+                            if info['name'] == target:
+                                target_socket = info['socket']
+                                break
+                        
+                        if target_socket:
+                            # Forward encrypted chunk
+                            self.send_json(target_socket, {
+                                'type': 'file_transfer',
+                                'from': client_name,
+                                'file_id': file_id,
+                                'chunk_num': chunk_num,
+                                'total_chunks': total_chunks,
+                                'encrypted_chunk': encrypted_chunk,
+                                'nonce': nonce,
+                                'tag': tag,
+                                'encrypted_key': encrypted_key
+                            })
+                            
+                            if chunk_num % 10 == 0 or chunk_num == total_chunks:
+                                print(f"{BLUE}[→]{RESET} Relaying file chunk {chunk_num}/{total_chunks} from {client_name} to {target}")
 
         except ConnectionResetError:
             print(f"{YELLOW}[!]{RESET} Connection reset: {client_name or 'unknown'}")
