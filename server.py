@@ -445,17 +445,15 @@ class Server:
 
                 ptype = pkg.get('type')
                 
-                # Handle room invitation request
                 if ptype == 'room_invite':
                     target_user = pkg.get('target')
                     
                     print(f"{BLUE}[i]{RESET} Room invite request from {client_name} to {target_user}")
                     
-                    # Generate unique invite ID
                     invite_id = self.generate_session_token()
                     
                     with self.lock:
-                        # Check if target is online
+                        # Là on Check if target est online
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target_user:
