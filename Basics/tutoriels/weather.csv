@@ -1,2 +1,0 @@
-temp_C,feelslike_C,windspeedKmph,weatherDesc,visibility,observation_time,precipInches,winddir16Point,precipMM,weatherCode,winddirDegree,humidity,uvIndex,weatherIconUrl,visibilityMiles,cloudcover,windspeedMiles,FeelsLikeC,localObsDateTime,pressureInches,temp_F,pressure,FeelsLikeF
-30,,12,[{'value': 'Partly cloudy'}],10,02:16 PM,0.1,N,1.9,116,2,75,2,[{'value': ''}],6,50,7,40,2025-08-21 02:16 PM,30,87,1012,103
