@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>report.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="pymessenger---syst%C3%A8me-de-messagerie-chiffr%C3%A9e-de-bout-en-bout">pyMessenger - Système de Messagerie Chiffrée de Bout en Bout</h1>
+<p><strong>Rapport Technique</strong></p>
+<hr>
+<h2 id="contexte-du-projet">Contexte du Projet</h2>
+<p>pyMessenger est une application de messagerie sécurisée que j'ai développée pour démontrer une compréhension approfondie des protocoles cryptographiques modernes et de leur implémentation pratique. Le projet illustre la conception d'un système de communication chiffré de bout en bout (E2EE) utilisant une architecture client-serveur, avec un accent particulier sur la sécurité des données et l'authentification robuste.</p>
+<p>L'objectif principal était de créer un système où même le serveur ne peut pas déchiffrer les communications des utilisateurs, tout en maintenant une expérience utilisateur fluide et en implémentant des mécanismes de sécurité contre les attaques courantes.</p>
+<hr>
+<h2 id="architecture-cryptographique">Architecture Cryptographique</h2>
+<h3 id="mod%C3%A8le-de-chiffrement-hybride">Modèle de Chiffrement Hybride</h3>
+<p>Le système repose sur une approche de <strong>chiffrement hybride</strong> qui combine les avantages du chiffrement asymétrique et symétrique :</p>
+<p><strong>Chiffrement asymétrique (RSA-2048)</strong> :</p>
+<ul>
+<li>Utilisé pour l'échange sécurisé des clés de session</li>
+<li>Chaque utilisateur génère une paire de clés RSA côté client</li>
+<li>La clé privée reste exclusivement sur le poste de l'utilisateur</li>
+<li>La clé publique est partagée via le serveur</li>
+</ul>
+<p><strong>Chiffrement symétrique (AES-256)</strong> :</p>
+<ul>
+<li>Utilisé pour chiffrer le contenu des messages</li>
+<li>Mode EAX (Encrypt-then-Authenticate-then-translate) pour l'authentification intégrée</li>
+<li>Génération d'une nouvelle clé AES pour chaque message</li>
+<li>Performance optimale pour les données volumineuses</li>
+</ul>
+<h3 id="processus-de-chiffrement-dun-message">Processus de Chiffrement d'un Message</h3>
+<p>Voici le flux complet d'envoi d'un message chiffré :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># 1. Génération d'une clé AES aléatoire (256 bits)</span>
+aes_key = get_random_bytes(<span class="hljs-number">32</span>)
+
+<span class="hljs-comment"># 2. Chiffrement du message avec AES-256-EAX</span>
+aes_cipher = AES.new(aes_key, AES.MODE_EAX)
+ciphertext, tag = aes_cipher.encrypt_and_digest(plaintext)
+nonce = aes_cipher.nonce
+
+<span class="hljs-comment"># 3. Chiffrement de la clé AES pour chaque destinataire</span>
+keys_map = {}
+<span class="hljs-keyword">for</span> target <span class="hljs-keyword">in</span> targets:
+    recipient_public_key = peer_keys.get(target)
+    rsa_cipher = PKCS1_OAEP.new(recipient_public_key)
+    encrypted_key = rsa_cipher.encrypt(aes_key)
+    keys_map[target] = base64.b64encode(encrypted_key)
+
+<span class="hljs-comment"># 4. Construction de l'enveloppe cryptographique</span>
+envelope = {
+    <span class="hljs-string">"type"</span>: <span class="hljs-string">"encrypted_send"</span>,
+    <span class="hljs-string">"from"</span>: sender_username,
+    <span class="hljs-string">"targets"</span>: list(keys_map.keys()),
+    <span class="hljs-string">"ciphertext"</span>: base64.b64encode(ciphertext),
+    <span class="hljs-string">"nonce"</span>: base64.b64encode(nonce),
+    <span class="hljs-string">"tag"</span>: base64.b64encode(tag),
+    <span class="hljs-string">"keys"</span>: keys_map
+}
+</div></code></pre>
+<p>Ce processus garantit que :</p>
+<ul>
+<li>Le serveur ne voit jamais la clé AES en clair</li>
+<li>Chaque destinataire peut déchiffrer indépendamment</li>
+<li>L'authentification du message est assurée par le tag EAX</li>
+<li>Une clé compromise n'affecte qu'un seul message</li>
+</ul>
+<h3 id="d%C3%A9chiffrement-c%C3%B4t%C3%A9-r%C3%A9cipiendaire">Déchiffrement Côté Récipiendaire</h3>
+<p>Le processus inverse est tout aussi sécurisé :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># 1. Extraction de la clé AES chiffrée pour ce destinataire</span>
+encrypted_aes_key = base64.b64decode(envelope[<span class="hljs-string">'key'</span>])
+
+<span class="hljs-comment"># 2. Déchiffrement avec la clé privée RSA</span>
+rsa_cipher = PKCS1_OAEP.new(private_rsa_key)
+aes_key = rsa_cipher.decrypt(encrypted_aes_key)
+
+<span class="hljs-comment"># 3. Reconstruction du chiffreur AES</span>
+ciphertext = base64.b64decode(envelope[<span class="hljs-string">'ciphertext'</span>])
+nonce = base64.b64decode(envelope[<span class="hljs-string">'nonce'</span>])
+tag = base64.b64decode(envelope[<span class="hljs-string">'tag'</span>])
+
+aes_cipher = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+
+<span class="hljs-comment"># 4. Déchiffrement et vérification de l'authenticité</span>
+plaintext = aes_cipher.decrypt_and_verify(ciphertext, tag)
+</div></code></pre>
+<p>La méthode <code>decrypt_and_verify()</code> lève une exception si le tag ne correspond pas, détectant ainsi toute tentative de modification du message.</p>
+<hr>
+<h2 id="syst%C3%A8me-dauthentification-s%C3%A9curis%C3%A9">Système d'Authentification Sécurisé</h2>
+<h3 id="protocole-challenge-response">Protocole Challenge-Response</h3>
+<p>L'une des fonctionnalités les plus intéressantes du projet est le système d'authentification par défi-réponse, qui évite la transmission du mot de passe après l'inscription initiale.</p>
+<p><strong>Flux d'authentification complet</strong> :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># CÔTÉ CLIENT - Étape 1 : Demande de connexion</span>
+auth_request = {
+    <span class="hljs-string">'type'</span>: <span class="hljs-string">'auth_request'</span>,
+    <span class="hljs-string">'auth_type'</span>: <span class="hljs-string">'login'</span>,
+    <span class="hljs-string">'username'</span>: username,
+    <span class="hljs-string">'pubkey'</span>: base64.b64encode(public_key_bytes)
+}
+
+<span class="hljs-comment"># CÔTÉ SERVEUR - Étape 2 : Génération du défi</span>
+nonce = base64.b64encode(get_random_bytes(<span class="hljs-number">32</span>))  <span class="hljs-comment"># Nonce aléatoire</span>
+salt = user_stored_salt  <span class="hljs-comment"># Sel stocké lors de l'inscription</span>
+
+challenge = {
+    <span class="hljs-string">'type'</span>: <span class="hljs-string">'auth_challenge'</span>,
+    <span class="hljs-string">'nonce'</span>: nonce,
+    <span class="hljs-string">'salt'</span>: salt
+}
+
+<span class="hljs-comment"># CÔTÉ CLIENT - Étape 3 : Calcul de la réponse</span>
+<span class="hljs-comment"># Dérivation de la clé à partir du mot de passe</span>
+password_key = PBKDF2(
+    password.encode(<span class="hljs-string">'utf-8'</span>),
+    base64.b64decode(salt),
+    <span class="hljs-number">32</span>,
+    count=<span class="hljs-number">100000</span>,
+    hmac_hash_module=SHA256
+)
+
+<span class="hljs-comment"># Signature HMAC du nonce</span>
+response_hash = hmac.new(
+    password_key,
+    nonce.encode(<span class="hljs-string">'utf-8'</span>),
+    hashlib.sha256
+).digest()
+
+response = {
+    <span class="hljs-string">'type'</span>: <span class="hljs-string">'auth_response'</span>,
+    <span class="hljs-string">'response'</span>: base64.b64encode(response_hash)
+}
+
+<span class="hljs-comment"># CÔTÉ SERVEUR - Étape 4 : Vérification</span>
+stored_password_key = get_stored_password_key(username)
+expected_response = hmac.new(
+    stored_password_key,
+    nonce.encode(<span class="hljs-string">'utf-8'</span>),
+    hashlib.sha256
+).digest()
+
+<span class="hljs-comment"># Comparaison en temps constant (anti timing-attack)</span>
+is_valid = hmac.compare_digest(
+    received_response,
+    base64.b64encode(expected_response)
+)
+</div></code></pre>
+<p><strong>Avantages de cette approche</strong> :</p>
+<ol>
+<li><strong>Zéro transmission de mot de passe</strong> : Après l'inscription, le mot de passe ne transite jamais sur le réseau</li>
+<li><strong>Protection contre le rejeu</strong> : Chaque nonce est unique et expire après 5 minutes</li>
+<li><strong>Résistance aux attaques temporelles</strong> : Utilisation de <code>hmac.compare_digest()</code> pour des comparaisons en temps constant</li>
+<li><strong>Dérivation robuste</strong> : PBKDF2 avec 100 000 itérations rend le brute-force coûteux</li>
+</ol>
+<h3 id="m%C3%A9canismes-de-protection-suppl%C3%A9mentaires">Mécanismes de Protection Supplémentaires</h3>
+<p>Le système implémente plusieurs couches de sécurité contre les attaques d'authentification :</p>
+<pre class="hljs"><code><div><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">UserStore</span>:</span>
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__init__</span><span class="hljs-params">(self)</span>:</span>
+        <span class="hljs-comment"># Limitation du taux de tentatives</span>
+        self.login_attempts = defaultdict(list)
+        self.locked_accounts = {}
+        
+        self.MAX_LOGIN_ATTEMPTS = <span class="hljs-number">5</span>
+        self.LOCKOUT_DURATION = <span class="hljs-number">900</span>  <span class="hljs-comment"># 15 minutes</span>
+        self.RATE_LIMIT_WINDOW = <span class="hljs-number">300</span>  <span class="hljs-comment"># 5 minutes</span>
+    
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_record_failed_login</span><span class="hljs-params">(self, username, ip_address=None)</span>:</span>
+        <span class="hljs-string">"""Enregistre une tentative échouée et verrouille si nécessaire."""</span>
+        current_time = time.time()
+        
+        <span class="hljs-comment"># Nettoyage des anciennes tentatives</span>
+        self.login_attempts[username] = [
+            t <span class="hljs-keyword">for</span> t <span class="hljs-keyword">in</span> self.login_attempts[username]
+            <span class="hljs-keyword">if</span> current_time - t &lt; self.RATE_LIMIT_WINDOW
+        ]
+        
+        self.login_attempts[username].append(current_time)
+        
+        <span class="hljs-comment"># Verrouillage après 5 tentatives</span>
+        <span class="hljs-keyword">if</span> len(self.login_attempts[username]) &gt;= self.MAX_LOGIN_ATTEMPTS:
+            unlock_time = current_time + self.LOCKOUT_DURATION
+            self.locked_accounts[username] = unlock_time
+            self.logger.warning(
+                <span class="hljs-string">f"Compte verrouillé : <span class="hljs-subst">{username}</span> (IP: <span class="hljs-subst">{ip_address}</span>)"</span>
+            )
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">True</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">False</span>
+</div></code></pre>
+<p>Cette implémentation protège contre :</p>
+<ul>
+<li>Les attaques par force brute</li>
+<li>Les attaques par dictionnaire</li>
+<li>Les tentatives automatisées massives</li>
+</ul>
+<hr>
+<h2 id="gestion-s%C3%A9curis%C3%A9e-des-cl%C3%A9s">Gestion Sécurisée des Clés</h2>
+<h3 id="stockage-local-des-cl%C3%A9s-priv%C3%A9es">Stockage Local des Clés Privées</h3>
+<p>Les clés privées RSA ne sont jamais transmises au serveur. Elles sont stockées localement avec un chiffrement basé sur le mot de passe de l'utilisateur :</p>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">save_private_key</span><span class="hljs-params">(self, username, private_key, password)</span>:</span>
+    <span class="hljs-string">"""Sauvegarde la clé privée chiffrée sur disque."""</span>
+    <span class="hljs-comment"># Génération d'un sel unique</span>
+    salt = get_random_bytes(<span class="hljs-number">16</span>)
+    
+    <span class="hljs-comment"># Dérivation de la clé de chiffrement depuis le mot de passe</span>
+    encryption_key = PBKDF2(
+        password.encode(<span class="hljs-string">'utf-8'</span>),
+        salt,
+        <span class="hljs-number">32</span>,
+        count=<span class="hljs-number">100000</span>,
+        hmac_hash_module=SHA256
+    )
+    
+    <span class="hljs-comment"># Chiffrement AES-GCM de la clé privée</span>
+    cipher = AES.new(encryption_key, AES.MODE_GCM)
+    ciphertext, tag = cipher.encrypt_and_digest(private_key)
+    
+    <span class="hljs-comment"># Structure du fichier : salt || nonce || tag || ciphertext</span>
+    key_file = self.keys_dir / <span class="hljs-string">f"<span class="hljs-subst">{username}</span>_private.key"</span>
+    <span class="hljs-keyword">with</span> open(key_file, <span class="hljs-string">'wb'</span>) <span class="hljs-keyword">as</span> f:
+        f.write(salt + cipher.nonce + tag + ciphertext)
+    
+    <span class="hljs-comment"># Permissions restrictives (Unix)</span>
+    <span class="hljs-keyword">if</span> os.name != <span class="hljs-string">'nt'</span>:
+        os.chmod(key_file, <span class="hljs-number">0o600</span>)  <span class="hljs-comment"># Lecture/écriture propriétaire uniquement</span>
+</div></code></pre>
+<p><strong>Points clés de cette approche</strong> :</p>
+<ul>
+<li>Le mot de passe n'est jamais stocké, seule la clé dérivée protège la clé privée</li>
+<li>Chaque clé a son propre sel, rendant les rainbow tables inefficaces</li>
+<li>Le mode GCM garantit l'intégrité (détection de modification du fichier)</li>
+<li>Les permissions système limitent l'accès aux fichiers sensibles</li>
+</ul>
+<h3 id="chargement-et-v%C3%A9rification">Chargement et Vérification</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">load_private_key</span><span class="hljs-params">(self, username, password)</span>:</span>
+    <span class="hljs-string">"""Charge et déchiffre la clé privée depuis le disque."""</span>
+    key_file = self.keys_dir / <span class="hljs-string">f"<span class="hljs-subst">{username}</span>_private.key"</span>
+    
+    <span class="hljs-keyword">try</span>:
+        <span class="hljs-keyword">with</span> open(key_file, <span class="hljs-string">'rb'</span>) <span class="hljs-keyword">as</span> f:
+            data = f.read()
+            salt = data[:<span class="hljs-number">16</span>]
+            nonce = data[<span class="hljs-number">16</span>:<span class="hljs-number">32</span>]
+            tag = data[<span class="hljs-number">32</span>:<span class="hljs-number">48</span>]
+            ciphertext = data[<span class="hljs-number">48</span>:]
+        
+        <span class="hljs-comment"># Dérivation de la clé de chiffrement</span>
+        encryption_key = PBKDF2(
+            password.encode(<span class="hljs-string">'utf-8'</span>),
+            salt,
+            <span class="hljs-number">32</span>,
+            count=<span class="hljs-number">100000</span>,
+            hmac_hash_module=SHA256
+        )
+        
+        <span class="hljs-comment"># Déchiffrement et vérification</span>
+        cipher = AES.new(encryption_key, AES.MODE_GCM, nonce=nonce)
+        private_key = cipher.decrypt_and_verify(ciphertext, tag)
+        
+        <span class="hljs-keyword">return</span> RSA.import_key(private_key)
+    <span class="hljs-keyword">except</span> Exception:
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">None</span>  <span class="hljs-comment"># Mot de passe incorrect ou fichier corrompu</span>
+</div></code></pre>
+<p>Un mauvais mot de passe lève une exception lors de <code>decrypt_and_verify()</code>, ce qui empêche l'importation de la clé.</p>
+<hr>
+<h2 id="couche-de-transport-s%C3%A9curis%C3%A9e-tlsssl">Couche de Transport Sécurisée (TLS/SSL)</h2>
+<p>En plus du chiffrement de bout en bout, le système utilise TLS pour protéger les métadonnées et prévenir les attaques de type man-in-the-middle au niveau du transport.</p>
+<h3 id="g%C3%A9n%C3%A9ration-des-certificats">Génération des Certificats</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">generate_self_signed_cert</span><span class="hljs-params">(cert_dir)</span>:</span>
+    <span class="hljs-string">"""Génère un certificat auto-signé pour le serveur."""</span>
+    <span class="hljs-comment"># Génération de la clé privée</span>
+    private_key = rsa.generate_private_key(
+        public_exponent=<span class="hljs-number">65537</span>,
+        key_size=<span class="hljs-number">2048</span>,
+        backend=default_backend()
+    )
+    
+    <span class="hljs-comment"># Construction du certificat</span>
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, <span class="hljs-string">u"SN"</span>),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, <span class="hljs-string">u"pyMessenger"</span>),
+        x509.NameAttribute(NameOID.COMMON_NAME, <span class="hljs-string">u"localhost"</span>),
+    ])
+    
+    cert = x509.CertificateBuilder().subject_name(
+        subject
+    ).issuer_name(
+        issuer
+    ).public_key(
+        private_key.public_key()
+    ).serial_number(
+        x509.random_serial_number()
+    ).not_valid_before(
+        datetime.utcnow()
+    ).not_valid_after(
+        datetime.utcnow() + timedelta(days=<span class="hljs-number">365</span>)
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(<span class="hljs-string">u"localhost"</span>),
+            x509.IPAddress(ipaddress.IPv4Address(<span class="hljs-string">u"127.0.0.1"</span>)),
+        ]),
+        critical=<span class="hljs-literal">False</span>,
+    ).sign(private_key, hashes.SHA256(), default_backend())
+    
+    <span class="hljs-comment"># Sauvegarde du certificat et de la clé</span>
+    <span class="hljs-comment"># ...</span>
+</div></code></pre>
+<h3 id="configuration-s%C3%A9curis%C3%A9e">Configuration Sécurisée</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_setup_ssl</span><span class="hljs-params">(self)</span>:</span>
+    <span class="hljs-string">"""Configuration du contexte SSL/TLS."""</span>
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+    
+    <span class="hljs-comment"># Paramètres de sécurité</span>
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.set_ciphers(
+        <span class="hljs-string">'ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:'</span>
+        <span class="hljs-string">'!aNULL:!MD5:!DSS'</span>
+    )
+    
+    <span class="hljs-keyword">return</span> context
+</div></code></pre>
+<p>Cette configuration :</p>
+<ul>
+<li>Force TLS 1.2 minimum (exclut les versions vulnérables)</li>
+<li>Privilégie les suites de chiffrement modernes avec AEAD</li>
+<li>Exclut les algorithmes faibles (NULL, MD5, DSS)</li>
+<li>Préfère ECDHE/DHE pour la sécurité prospective au niveau du transport</li>
+</ul>
+<hr>
+<h2 id="fonctionnalit%C3%A9s-de-messagerie">Fonctionnalités de Messagerie</h2>
+<h3 id="modes-de-communication">Modes de Communication</h3>
+<p>Le système supporte trois modes de communication :</p>
+<p><strong>Mode Diffusion (Broadcast)</strong> :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Envoi à tous les utilisateurs en ligne</span>
+targets = [n <span class="hljs-keyword">for</span> n <span class="hljs-keyword">in</span> self.peer_keys.keys() <span class="hljs-keyword">if</span> n != self.username]
+self.encrypt_and_send_message(message_bytes, targets)
+</div></code></pre>
+<p><strong>Mode Salon Privé</strong> :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Communication exclusive avec un utilisateur</span>
+<span class="hljs-keyword">if</span> self.current_room:
+    targets = [self.current_room]
+    self.encrypt_and_send_message(message_bytes, targets)
+</div></code></pre>
+<p><strong>Message Privé Ponctuel</strong> :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Commande /msg &lt;utilisateur&gt; &lt;message&gt;</span>
+target = parts[<span class="hljs-number">1</span>]
+content = parts[<span class="hljs-number">2</span>]
+self.encrypt_and_send_message(content.encode(<span class="hljs-string">'utf-8'</span>), [target])
+</div></code></pre>
+<h3 id="syst%C3%A8me-dinvitation-aux-salons">Système d'Invitation aux Salons</h3>
+<p>L'entrée dans un salon privé nécessite l'acceptation des deux parties, implémentée via un système d'invitation :</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Émetteur : envoi de l'invitation</span>
+send_json(self.client_socket, {
+    <span class="hljs-string">'type'</span>: <span class="hljs-string">'room_invite'</span>,
+    <span class="hljs-string">'target'</span>: target_username
+})
+
+<span class="hljs-comment"># Serveur : acheminement avec ID unique</span>
+invite_id = self.generate_session_token()
+self.pending_room_invites[invite_id] = {
+    <span class="hljs-string">'from'</span>: sender,
+    <span class="hljs-string">'to'</span>: target,
+    <span class="hljs-string">'timestamp'</span>: time.time()
+}
+
+<span class="hljs-comment"># Récepteur : acceptation ou refus</span>
+send_json(self.client_socket, {
+    <span class="hljs-string">'type'</span>: <span class="hljs-string">'room_invite_response'</span>,
+    <span class="hljs-string">'invite_id'</span>: invite_id,
+    <span class="hljs-string">'accepted'</span>: <span class="hljs-literal">True</span>  <span class="hljs-comment"># ou False</span>
+})
+</div></code></pre>
+<p>Ce mécanisme empêche les communications non sollicitées et donne le contrôle aux utilisateurs.</p>
+<hr>
+<h2 id="interface-et-exp%C3%A9rience-utilisateur">Interface et Expérience Utilisateur</h2>
+<p>L'application utilise une interface en ligne de commande enrichie avec <code>prompt_toolkit</code>, offrant :</p>
+<ul>
+<li>Coloration syntaxique des messages selon leur type</li>
+<li>Gestion de l'historique avec <code>deque</code> (100 derniers messages)</li>
+<li>Indicateurs visuels pour les mentions (@utilisateur)</li>
+<li>Mode de saisie non-bloquant avec <code>patch_stdout()</code></li>
+<li>Bannières contextuelles selon le mode actif</li>
+</ul>
+<pre class="hljs"><code><div><span class="hljs-comment"># Affichage d'un message avec horodatage et coloration</span>
+timestamp = datetime.now().strftime(<span class="hljs-string">"%H:%M"</span>)
+<span class="hljs-keyword">if</span> is_private:
+    msg = <span class="hljs-string">f"<span class="hljs-subst">{GRAY}</span>[<span class="hljs-subst">{timestamp}</span>] <span class="hljs-subst">{GREEN}</span>[<span class="hljs-subst">{sender}</span>]-(priv)<span class="hljs-subst">{RESET}</span> <span class="hljs-subst">{content}</span>"</span>
+<span class="hljs-keyword">else</span>:
+    msg = <span class="hljs-string">f"<span class="hljs-subst">{GRAY}</span>[<span class="hljs-subst">{timestamp}</span>] <span class="hljs-subst">{GREEN}</span>[<span class="hljs-subst">{sender}</span>]<span class="hljs-subst">{RESET}</span> <span class="hljs-subst">{content}</span>"</span>
+
+self.display_message(msg, <span class="hljs-string">'incoming'</span>)
+</div></code></pre>
+<hr>
+<h2 id="analyse-de-s%C3%A9curit%C3%A9">Analyse de Sécurité</h2>
+<h3 id="menaces-couvertes">Menaces Couvertes</h3>
+<table>
+<thead>
+<tr>
+<th>Menace</th>
+<th>Protection Implémentée</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Écoute passive du réseau</td>
+<td>TLS 1.2+ + E2EE (AES-256)</td>
+</tr>
+<tr>
+<td>Modification de messages</td>
+<td>AEAD avec tags d'authentification</td>
+</tr>
+<tr>
+<td>Compromission du serveur</td>
+<td>E2EE (serveur ne voit que du chiffré)</td>
+</tr>
+<tr>
+<td>Attaques par force brute</td>
+<td>PBKDF2 (100k iter.) + verrouillage de compte</td>
+</tr>
+<tr>
+<td>Attaques temporelles</td>
+<td>Comparaisons en temps constant</td>
+</tr>
+<tr>
+<td>Rejeu d'authentification</td>
+<td>Nonces uniques avec expiration</td>
+</tr>
+<tr>
+<td>Énumération d'utilisateurs</td>
+<td>Temps de réponse constant</td>
+</tr>
+</tbody>
+</table>
+<h3 id="limitations-connues">Limitations Connues</h3>
+<p><strong>Absence de Perfect Forward Secrecy (PFS)</strong> :</p>
+<p>Le système utilise des clés RSA statiques pour l'échange de clés. Bien que chaque message utilise une clé AES unique, la compromission d'une clé privée RSA permettrait le déchiffrement rétrospectif de tous les messages interceptés.</p>
+<pre class="hljs"><code><div>Scénario d'attaque :
+1. Attaquant capture le trafic chiffré pendant des mois
+2. Attaquant compromet la clé privée RSA d'un utilisateur
+3. Attaquant peut déchiffrer toutes les clés AES des messages capturés
+4. Accès à l'historique complet des communications
+</div></code></pre>
+<p><strong>Pour implémenter un vrai PFS, il faudrait</strong> :</p>
+<ul>
+<li>Échange de clés Diffie-Hellman éphémères par session</li>
+<li>Suppression immédiate des clés privées éphémères après usage</li>
+<li>Rotation périodique des clés de session (comme le Double Ratchet de Signal)</li>
+</ul>
+<p><strong>Autres limitations</strong> :</p>
+<ul>
+<li>Certificats auto-signés (pas de PKI établie)</li>
+<li>Pas de persistance des messages côté serveur</li>
+<li>Pas de support multi-appareil pour un même utilisateur</li>
+<li>Vulnérable aux compromissions des endpoints clients</li>
+</ul>
+<hr>
+<h2 id="technologies-utilis%C3%A9es">Technologies Utilisées</h2>
+<p><strong>Bibliothèques Cryptographiques</strong> :</p>
+<ul>
+<li><code>pycryptodome</code> : RSA, AES, PBKDF2, hachage</li>
+<li><code>cryptography</code> : Génération de certificats X.509, SSL/TLS</li>
+<li>Modules standard : <code>ssl</code>, <code>hmac</code>, <code>hashlib</code>, <code>secrets</code></li>
+</ul>
+<p><strong>Interface et Réseau</strong> :</p>
+<ul>
+<li><code>prompt_toolkit</code> : Interface terminal avancée</li>
+<li><code>socket</code> : Communication TCP/IP</li>
+<li><code>threading</code> : Gestion multi-clients côté serveur</li>
+</ul>
+<p><strong>Stockage et Sérialisation</strong> :</p>
+<ul>
+<li>JSON pour le protocole applicatif</li>
+<li>Base64 pour l'encodage des données binaires</li>
+<li>Fichiers locaux pour la persistance des clés</li>
+</ul>
+<hr>
+<h2 id="comp%C3%A9tences-d%C3%A9montr%C3%A9es">Compétences Démontrées</h2>
+<p>Ce projet illustre une maîtrise des concepts suivants :</p>
+<p><strong>Cryptographie Appliquée</strong> :</p>
+<ul>
+<li>Chiffrement hybride (asymétrique + symétrique)</li>
+<li>Modes de chiffrement authentifiés (AEAD)</li>
+<li>Dérivation de clés (KDF)</li>
+<li>Authentification par challenge-response</li>
+<li>Gestion du cycle de vie des clés</li>
+</ul>
+<p><strong>Sécurité Applicative</strong> :</p>
+<ul>
+<li>Authentification robuste sans transmission de secrets</li>
+<li>Protection contre les attaques courantes (brute-force, timing, rejeu)</li>
+<li>Architecture zero-trust (serveur non privilégié)</li>
+<li>Journalisation de sécurité</li>
+</ul>
+<p><strong>Développement Système</strong> :</p>
+<ul>
+<li>Architecture client-serveur multi-threadée</li>
+<li>Protocoles réseau personnalisés</li>
+<li>Gestion des sockets TCP/IP avec TLS</li>
+<li>Traitement asynchrone des événements</li>
+</ul>
+<p><strong>Bonnes Pratiques</strong> :</p>
+<ul>
+<li>Code modulaire et maintenable</li>
+<li>Gestion d'erreurs robuste</li>
+<li>Documentation technique claire</li>
+<li>Logging de sécurité détaillé</li>
+</ul>
+<hr>
+<h2 id="conclusion">Conclusion</h2>
+<p>pyMessenger représente une implémentation complète d'un système de messagerie sécurisée, démontrant une compréhension approfondie des principes cryptographiques modernes et de leur mise en œuvre pratique. Le projet met l'accent sur la sécurité dès la conception (security by design) tout en maintenant une architecture claire et extensible.</p>
+<p>Les choix techniques reflètent un équilibre entre sécurité maximale et contraintes d'implémentation, avec une transparence totale sur les limitations et les compromis effectués. Cette approche pragmatique de la cryptographie appliquée constitue une base solide pour des systèmes de communication sécurisés plus ambitieux.</p>
+<hr>
+<p><strong>Technologies</strong> : Python 3, Cryptographie (RSA, AES, PBKDF2, HMAC), SSL/TLS, Sockets, Threading<br>
+<strong>Lignes de code</strong> : ~2000<br>
+<strong>Durée du projet</strong> : Développement personnel<br>
+<strong>Disponibilité</strong> : Code source disponible sur demande</p>
+
+</body>
+</html>
