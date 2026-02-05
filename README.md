@@ -5,7 +5,7 @@
 A secure, terminal-based messaging application implementing modern cryptographic protocols for private communication.
 
 <p align="center">  
-  <img width="720" height="306" alt="Login Screen" src="./assets/image1.png" />
+  <img width="600" height="306" alt="Login Screen" src="./assets/image1.png" />
   <br>
   <em>Login Screen</em>
 </p>
