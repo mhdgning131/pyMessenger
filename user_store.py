@@ -16,34 +16,25 @@ from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 
 class UserStore:
-    """
-    Handles user database, authentication, and security.
-    """
 
     def __init__(self):
-        # Define directories and files
         self.config_dir = Path.home() / '.secure_messenger'
         self.keys_dir = self.config_dir / 'keys'
         self.logs_dir = self.config_dir / 'logs'
         self.users_file = self.config_dir / 'users.json'
 
-        # Create necessary directories
         self._initialize_directories()
         
-        # Setup logging first, before loading the database
         self._setup_logging()
         
-        # Load user database
         self.users_db = self._load_users_db()
         
-        # Rate limiting and account lockout
         self.login_attempts = defaultdict(list)  # username -> [timestamp, timestamp, ...]
         self.locked_accounts = {}  # username -> unlock_timestamp
         self.MAX_LOGIN_ATTEMPTS = 5
         self.LOCKOUT_DURATION = 900  # 15 minutes in seconds
         self.RATE_LIMIT_WINDOW = 300  # 5 minutes in seconds
         
-        # Challenge-response authentication
         self.active_challenges = {}  # username -> {nonce, timestamp}
         self.CHALLENGE_TIMEOUT = 300  # 5 minutes
 

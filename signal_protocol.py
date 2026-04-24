@@ -1,14 +1,3 @@
-"""Signal-inspired cryptographic primitives for pyMessenger.
-
-This module implements a compact Signal-like design:
-- long-term identity signing key (Ed25519)
-- long-term identity DH key (X25519)
-- signed prekey (X25519)
-- one-time prekeys (X25519)
-- X3DH-style session establishment
-- symmetric message ratchet with AES-GCM
-"""
-
 from __future__ import annotations
 
 import base64
