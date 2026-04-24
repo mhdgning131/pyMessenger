@@ -2,6 +2,7 @@ import socket
 import threading
 import json
 import base64
+import hashlib
 import struct
 import getpass
 import os
@@ -84,6 +85,21 @@ def recv_json(sock):
         return None
 
 
+def safe_path_component(value, fallback='item'):
+    """Return a filesystem-safe path component derived from an arbitrary value."""
+    text = Path(str(value)).name
+    safe = ''.join(ch for ch in text if ch.isalnum() or ch in ('-', '_', '.'))
+    safe = safe.strip(' ._-')
+
+    if not safe:
+        safe = fallback
+
+    if safe.lower() in {'con', 'prn', 'aux', 'nul', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'}:
+        safe = f'_{safe}'
+
+    return safe
+
+
 class KeyManager:
     """Manages local key storage for the client."""
     
@@ -117,12 +133,13 @@ class KeyManager:
     
     def save_private_key(self, username, private_key, password):
         """Save encrypted private key to disk."""
+        safe_username = safe_path_component(username, 'user')
         salt = get_random_bytes(16)
         encryption_key = self._derive_key(password, salt)
         cipher = AES.new(encryption_key, AES.MODE_GCM)
         ciphertext, tag = cipher.encrypt_and_digest(private_key)
         
-        key_file = self.keys_dir / f"{username}_private.key"
+        key_file = self.keys_dir / f"{safe_username}_private.key"
         with open(key_file, 'wb') as f:
             f.write(salt + cipher.nonce + tag + ciphertext)
         
@@ -131,7 +148,8 @@ class KeyManager:
     
     def load_private_key(self, username, password):
         """Load and decrypt private key from disk."""
-        key_file = self.keys_dir / f"{username}_private.key"
+        safe_username = safe_path_component(username, 'user')
+        key_file = self.keys_dir / f"{safe_username}_private.key"
         if not key_file.exists():
             return None
         
@@ -152,11 +170,12 @@ class KeyManager:
     
     def key_exists(self, username):
         """Check if a key file exists for username."""
-        key_file = self.keys_dir / f"{username}_private.key"
+        safe_username = safe_path_component(username, 'user')
+        key_file = self.keys_dir / f"{safe_username}_private.key"
         return key_file.exists()
 
 class Client:
-    def __init__(self, host='localhost', port=1315, ca_cert_path=None):
+    def __init__(self, host='3.73.36.161', port=80, ca_cert_path=None):
         self.host = host
         self.port = port
         self.client_socket = None
@@ -195,9 +214,63 @@ class Client:
         self.active_file_transfers = {}  # file_id -> {'chunks': {}, 'total': int, 'filename': str, 'from': str}
         self.pending_file_sends = {}  # file_id -> {'target': username, 'file_path': Path}
         self.file_lock = threading.Lock()
+        self._remote_peer_fingerprint = None
         
         # SSL/TLS setup
         self.ssl_context = self._setup_ssl()
+
+    def _is_local_host(self):
+        """Check whether the client targets a local development server."""
+        host = str(self.host).strip().lower()
+        return host in {'localhost', '127.0.0.1', '::1'}
+
+    def _origin_file(self):
+        """Return the sidecar file that records how the trust anchor was obtained."""
+        return self.ca_cert_path.with_name(self.ca_cert_path.name + '.origin')
+
+    def _load_trust_origin(self):
+        """Load a saved remote certificate fingerprint, if one exists."""
+        try:
+            origin_file = self._origin_file()
+            if not origin_file.exists():
+                return None
+
+            origin = origin_file.read_text(encoding='utf-8').strip()
+            parts = origin.split()
+            if len(parts) == 3 and parts[0] == 'pinned-remote' and parts[1] == f'{self.host}:{self.port}':
+                return parts[2]
+            return None
+        except Exception:
+            return None
+
+    def _certificate_fingerprint(self, pem_text):
+        """Compute a stable SHA-256 fingerprint for a PEM certificate."""
+        der_bytes = ssl.PEM_cert_to_DER_cert(pem_text)
+        return hashlib.sha256(der_bytes).hexdigest()
+
+    def _bootstrap_remote_certificate(self, ca_cert_file):
+        """Fetch and pin the server certificate when no local trust anchor is available."""
+        try:
+            print(f"{YELLOW}! No local CA certificate found; pinning the remote server certificate from {self.host}:{self.port}{RESET}")
+            server_cert_pem = ssl.get_server_certificate((self.host, self.port))
+            ca_cert_file.parent.mkdir(parents=True, exist_ok=True)
+            ca_cert_file.write_text(server_cert_pem, encoding='utf-8')
+
+            fingerprint = self._certificate_fingerprint(server_cert_pem)
+
+            origin_file = self._origin_file()
+            origin_file.write_text(f'pinned-remote {self.host}:{self.port} {fingerprint}\n', encoding='utf-8')
+
+            if os.name != 'nt':
+                os.chmod(ca_cert_file, 0o644)
+                os.chmod(origin_file, 0o600)
+
+            self._remote_peer_fingerprint = fingerprint
+            print(f"{GREEN}✓ Server certificate pinned to {ca_cert_file}{RESET}")
+            return True
+        except Exception as e:
+            print(f"{RED}✗ Failed to pin the remote server certificate: {e}{RESET}")
+            return False
 
     def _setup_ssl(self):
         """Setup SSL/TLS context for client connections."""
@@ -207,16 +280,47 @@ class Client:
             
             # Load the root CA certificate for verification
             ca_cert_file = self.ca_cert_path
+            saved_fingerprint = self._load_trust_origin()
+
+            if not ca_cert_file.exists() and self._is_local_host():
+                try:
+                    from generate_certificates import ensure_certificates
+                    ensure_certificates(ca_cert_file.parent)
+                except Exception as e:
+                    print(f"{RED}✗ Failed to generate local TLS certificates: {e}{RESET}")
+
+            if not ca_cert_file.exists() and not self._is_local_host():
+                if not self._bootstrap_remote_certificate(ca_cert_file):
+                    print(f"{YELLOW}! Copy the server's ca.crt to that path or pass --ca-cert{RESET}")
+                    return None
+
+            if not self._is_local_host() and self._remote_peer_fingerprint is None:
+                if ca_cert_file.exists():
+                    try:
+                        pinned_pem = ca_cert_file.read_text(encoding='utf-8')
+                        self._remote_peer_fingerprint = self._certificate_fingerprint(pinned_pem)
+                    except Exception as e:
+                        print(f"{RED}✗ Invalid pinned certificate at {ca_cert_file}: {e}{RESET}")
+                        return None
+                elif saved_fingerprint:
+                    self._remote_peer_fingerprint = saved_fingerprint
             
             if ca_cert_file.exists():
-                context.load_verify_locations(cafile=str(ca_cert_file))
-                context.check_hostname = True
-                context.verify_mode = ssl.CERT_REQUIRED
-                
-                print(f"{GREEN}✓ Root CA loaded for server validation{RESET}")
+                if self._is_local_host():
+                    context.load_verify_locations(cafile=str(ca_cert_file))
+                    context.check_hostname = True
+                    context.verify_mode = ssl.CERT_REQUIRED
+                    print(f"{GREEN}✓ Root CA loaded for server validation{RESET}")
+                else:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                    print(f"{GREEN}✓ Remote certificate pin loaded{RESET}")
             else:
                 print(f"{RED}✗ Root CA certificate not found at {ca_cert_file}{RESET}")
-                print(f"{YELLOW}! Run generate_certificates.py first to create ca.crt and server.crt{RESET}")
+                if self._is_local_host():
+                    print(f"{YELLOW}! Run generate_certificates.py or start the server once to create ca.crt and server.crt{RESET}")
+                else:
+                    print(f"{YELLOW}! Copy the server's ca.crt to that path or pass --ca-cert{RESET}")
                 return None
             
             # Security settings - same as server
@@ -393,6 +497,18 @@ class Client:
                         server_hostname=self.host
                     )
                     temp_socket.connect((self.host, self.port))
+
+                    if not self._is_local_host() and self._remote_peer_fingerprint:
+                        peer_cert = temp_socket.getpeercert(binary_form=True)
+                        actual_fingerprint = hashlib.sha256(peer_cert).hexdigest()
+                        if actual_fingerprint != self._remote_peer_fingerprint:
+                            print(f"  {RED}✗ Server certificate pin mismatch{RESET}")
+                            print(f"  {YELLOW}! Expected: {self._remote_peer_fingerprint}{RESET}")
+                            print(f"  {YELLOW}! Actual:   {actual_fingerprint}{RESET}")
+                            temp_socket.close()
+                            input(f"\n  {GRAY}Press Enter to continue...{RESET}")
+                            return False
+
                     print(f"  {GREEN}✓ Secure connection established (TLS/SSL){RESET}")
                     
                     # Display connection security info
@@ -485,7 +601,6 @@ class Client:
                 # Step 3: Compute challenge response using password
                 # Derive the same key as stored on server
                 import hmac
-                import hashlib
                 
                 salt = base64.b64decode(salt_b64)
                 
@@ -1222,7 +1337,7 @@ class Client:
             print_formatted_text(ANSI(f"{GREEN}✓ File sent successfully!{RESET}\n"))
             
             # Save to sent folder for record
-            sent_path = self.key_manager.sent_dir / file_path.name
+            sent_path = self.key_manager.sent_dir / safe_path_component(file_path.name, 'sent_file')
             import shutil
             shutil.copy2(file_path, sent_path)
             
@@ -1314,17 +1429,19 @@ class Client:
                 complete_data += transfer['chunks'][i]
             
             # Save file to received folder with sender prefix
-            safe_filename = f"{sender}_{filename}"
+            safe_sender = safe_path_component(sender, 'peer')
+            safe_name = safe_path_component(filename, 'file')
+            safe_filename = f"{safe_sender}_{safe_name}"
             save_path = self.key_manager.received_dir / safe_filename
             
             # Handle duplicate filenames
             counter = 1
             while save_path.exists():
-                name_parts = filename.rsplit('.', 1)
+                name_parts = safe_name.rsplit('.', 1)
                 if len(name_parts) == 2:
-                    safe_filename = f"{sender}_{name_parts[0]}_{counter}.{name_parts[1]}"
+                    safe_filename = f"{safe_sender}_{name_parts[0]}_{counter}.{name_parts[1]}"
                 else:
-                    safe_filename = f"{sender}_{filename}_{counter}"
+                    safe_filename = f"{safe_sender}_{safe_name}_{counter}"
                 save_path = self.key_manager.received_dir / safe_filename
                 counter += 1
             
@@ -1611,10 +1728,10 @@ class Client:
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser(description='Unicast Secure Messenger Client')
-        parser.add_argument('--host', '-H', default='localhost',
-                            help='Server address (default: localhost)')
-        parser.add_argument('--port', '-P', type=int, default=1315,
-                            help='Server port (default: 1315)')
+        parser.add_argument('--host', '-H', default='3.73.36.161',
+                            help='Server address (default: 3.73.36.161)')
+        parser.add_argument('--port', '-P', type=int, default=80,
+                            help='Server port (default: 80)')
         parser.add_argument('--ca-cert', default=str(Path.home() / '.secure_messenger' / 'certs' / 'ca.crt'),
                             help='Path to the trusted root CA certificate (default: ~/.secure_messenger/certs/ca.crt)')
         args = parser.parse_args()

@@ -18,7 +18,7 @@ YELLOW = "\033[93;1m"
 RESET = "\033[0m"
 
 class Server:
-    def __init__(self, host="0.0.0.0", port=1315, certificate_hosts=None):
+    def __init__(self, host="0.0.0.0", port=80, certificate_hosts=None):
         self.host = host
         self.port = port
         self.certificate_hosts = certificate_hosts
@@ -47,7 +47,7 @@ class Server:
             ca_cert_file, cert_file, key_file = ensure_certificates(cert_dir, self.certificate_hosts)
         except Exception as e:
             print(f"{RED}[x]{RESET} Failed to generate certificates: {e}")
-            print(f"{YELLOW}[!]{RESET} Server will run without SSL encryption")
+            print(f"{YELLOW}[!]{RESET} Server TLS setup failed")
             return None
         
         try:
@@ -65,7 +65,7 @@ class Server:
             return context
         except Exception as e:
             print(f"{RED}[x]{RESET} SSL setup error: {e}")
-            print(f"{YELLOW}[!]{RESET} Server will run without SSL encryption")
+            print(f"{YELLOW}[!]{RESET} Server TLS setup failed")
             return None
 
     def send_json(self, sock, obj):
@@ -75,6 +75,8 @@ class Server:
             header = struct.pack('>I', len(data))
             sock.sendall(header + data)
             return True
+        except (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, BrokenPipeError):
+            return False
         except Exception as e:
             print(f"{RED}[x]{RESET} Error sending JSON: {e}")
             return False
@@ -137,7 +139,10 @@ class Server:
         try:
             # Receive auth request
             auth_msg = self.recv_json(client_socket)
-            if not auth_msg or auth_msg.get('type') != 'auth_request':
+            if auth_msg is None:
+                return None, None
+
+            if auth_msg.get('type') != 'auth_request':
                 self.send_json(client_socket, {
                     'type': 'auth_response',
                     'success': False,
@@ -323,6 +328,10 @@ class Server:
     def start(self):
         """Start the server."""
         try:
+            if not self.ssl_context:
+                print(f"{RED}[x]{RESET} SSL/TLS setup failed. Run generate_certificates.py before starting the server.")
+                return
+
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.settimeout(1.0)
@@ -332,10 +341,7 @@ class Server:
             self.running = True
             
             print(f"{GREEN}[+]{RESET} Server started on {self.host}, port {self.port}")
-            if self.ssl_context:
-                print(f"{GREEN}[+]{RESET} SSL/TLS encryption: ENABLED")
-            else:
-                print(f"{YELLOW}[!]{RESET} SSL/TLS encryption: DISABLED (insecure)")
+            print(f"{GREEN}[+]{RESET} SSL/TLS encryption: ENABLED")
             print(f"{BLUE}[i]{RESET} Authentication system ready")
             print(f"{YELLOW}[i]{RESET} Press Ctrl+C to stop the server")
             
@@ -820,8 +826,8 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description='Unicast Secure Messenger Server')
         parser.add_argument('--host', '-H', default='0.0.0.0',
                             help='Bind address (default: 0.0.0.0)')
-        parser.add_argument('--port', '-P', type=int, default=1315,
-                            help='Listen port (default: 1315)')
+        parser.add_argument('--port', '-P', type=int, default=80,
+                            help='Listen port (default: 80)')
         parser.add_argument('--cert-host', action='append', dest='cert_hosts',
                             help='Hostname or IP to include in the server certificate SAN. May be repeated.')
         args = parser.parse_args()

@@ -2,6 +2,7 @@ import json
 import os
 import time
 import base64
+import re
 import logging
 import hmac
 import hashlib
@@ -87,6 +88,13 @@ class UserStore:
         except Exception as e:
             self.logger.error(f"Failed to save user database: {e}")
 
+    def _is_valid_username(self, username):
+        """Validate usernames before they are stored or used in file paths."""
+        if not isinstance(username, str):
+            return False
+
+        return bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,62}[A-Za-z0-9])?", username))
+
     def _hash_password(self, password, salt=None):
         """Hash a password using PBKDF2 with SHA-256."""
         if salt is None:
@@ -98,6 +106,9 @@ class UserStore:
 
     def create_user_with_pubkey(self, username, password, pubkey_bytes):
         """Create a new user account with a client-provided public key."""
+        if not self._is_valid_username(username):
+            return False, "Invalid username. Use 1-64 characters: letters, numbers, dot, underscore, or hyphen."
+
         if username in self.users_db:
             return False, "Username already exists."
 
