@@ -1,5 +1,6 @@
 import socket
 import threading
+import argparse
 import json
 import base64
 import struct
@@ -17,9 +18,10 @@ YELLOW = "\033[93;1m"
 RESET = "\033[0m"
 
 class Server:
-    def __init__(self, host="0.0.0.0", port=1315):
+    def __init__(self, host="0.0.0.0", port=1315, certificate_hosts=None):
         self.host = host
         self.port = port
+        self.certificate_hosts = certificate_hosts
         self.server_socket = None
         self.running = False
         self.clients = {}  # session_token -> {"name": name, "socket": sock, "pubkey": pubkey_bytes}
@@ -39,31 +41,27 @@ class Server:
     def _setup_ssl(self):
         """Setup SSL/TLS context for secure connections."""
         cert_dir = Path.home() / '.secure_messenger' / 'certs'
-        cert_file = cert_dir / 'server.crt'
-        key_file = cert_dir / 'server.key'
         
-        # Check if certificates exist, if not, generate them
-        if not cert_file.exists() or not key_file.exists():
-            print(f"{YELLOW}[!]{RESET} SSL certificates not found. Generating...")
-            from generate_certificates import generate_self_signed_cert
-            try:
-                generate_self_signed_cert(cert_dir)
-            except Exception as e:
-                print(f"{RED}[x]{RESET} Failed to generate certificates: {e}")
-                print(f"{YELLOW}[!]{RESET} Server will run without SSL encryption")
-                return None
+        try:
+            from generate_certificates import ensure_certificates
+            ca_cert_file, cert_file, key_file = ensure_certificates(cert_dir, self.certificate_hosts)
+        except Exception as e:
+            print(f"{RED}[x]{RESET} Failed to generate certificates: {e}")
+            print(f"{YELLOW}[!]{RESET} Server will run without SSL encryption")
+            return None
         
         try:
             # Create SSL context
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(certfile=str(cert_file), keyfile=str(key_file))
+            context.load_verify_locations(cafile=str(ca_cert_file))
             
             # Security settings
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.set_ciphers('ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS')
             
             print(f"{GREEN}[+]{RESET} SSL/TLS encryption enabled")
-            print(f"{BLUE}[i]{RESET} Using certificate: {cert_file}")
+            print(f"{BLUE}[i]{RESET} Using CA-signed certificate: {cert_file}")
             return context
         except Exception as e:
             print(f"{RED}[x]{RESET} SSL setup error: {e}")
@@ -295,7 +293,7 @@ class Server:
                 self.user_store.users_db[username]['public_key']
             )
             if pubkey_bytes != stored_pubkey:
-                send_json(client_socket, {
+                self.send_json(client_socket, {
                     'type': 'auth_result',
                     'success': False,
                     'message': 'Public key mismatch'
@@ -303,7 +301,7 @@ class Server:
                 return None, None
         except Exception as e:
             print(f"{RED}[x]{RESET} Key verification error: {e}")
-            send_json(client_socket, {
+            self.send_json(client_socket, {
                 'type': 'auth_result',
                 'success': False,
                 'message': 'Invalid public key'
@@ -312,7 +310,7 @@ class Server:
 
         # Step 5: Create session and send success
         token = self.create_session(username)
-        send_json(client_socket, {
+        self.send_json(client_socket, {
             'type': 'auth_result',
             'success': True,
             'message': 'Login successful',
@@ -485,6 +483,98 @@ class Server:
                                 'type': 'room_invite_failed',
                                 'reason': 'User not online'
                             })
+
+                elif ptype == 'signal_bundle_upload':
+                    bundle = pkg.get('bundle')
+                    if not bundle:
+                        self.send_json(client_socket, {
+                            'type': 'signal_bundle_ack',
+                            'success': False,
+                            'message': 'Missing Signal bundle'
+                        })
+                        continue
+
+                    with self.lock:
+                        success, message = self.user_store.set_signal_bundle(client_name, bundle)
+
+                    self.send_json(client_socket, {
+                        'type': 'signal_bundle_ack',
+                        'success': success,
+                        'message': message
+                    })
+
+                    if success:
+                        print(f"{GREEN}[+]{RESET} Signal bundle stored for {client_name}")
+
+                elif ptype == 'signal_bundle_request':
+                    target_user = pkg.get('target')
+                    request_id = pkg.get('request_id')
+
+                    if not target_user or not request_id:
+                        self.send_json(client_socket, {
+                            'type': 'signal_bundle_response',
+                            'request_id': request_id,
+                            'success': False,
+                            'message': 'Invalid Signal bundle request'
+                        })
+                        continue
+
+                    with self.lock:
+                        bundle = self.user_store.get_signal_bundle(target_user, consume_one_time=True)
+
+                    if bundle:
+                        self.send_json(client_socket, {
+                            'type': 'signal_bundle_response',
+                            'request_id': request_id,
+                            'target': target_user,
+                            'success': True,
+                            'bundle': bundle
+                        })
+                    else:
+                        self.send_json(client_socket, {
+                            'type': 'signal_bundle_response',
+                            'request_id': request_id,
+                            'target': target_user,
+                            'success': False,
+                            'message': 'No Signal bundle available for that user'
+                        })
+
+                elif ptype == 'signal_send':
+                    from_name = pkg.get('from')
+                    target = pkg.get('target')
+                    packet = pkg.get('packet')
+
+                    if from_name != client_name:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': 'Identity mismatch'
+                        })
+                        continue
+
+                    if not target or not packet:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': 'Invalid Signal packet'
+                        })
+                        continue
+
+                    target_socket = None
+                    with self.lock:
+                        for token, info in self.clients.items():
+                            if info['name'] == target:
+                                target_socket = info['socket']
+                                break
+
+                    if target_socket:
+                        try:
+                            self.send_json(target_socket, packet)
+                        except Exception as e:
+                            print(f"{RED}[x]{RESET} Error forwarding Signal packet: {e}")
+                    else:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': f'User {target} not found'
+                        })
                 
                 # Handle room invitation response
                 elif ptype == 'room_invite_response':
@@ -727,7 +817,16 @@ class Server:
 
 if __name__ == "__main__":
     try:
-        server = Server()
+        parser = argparse.ArgumentParser(description='Unicast Secure Messenger Server')
+        parser.add_argument('--host', '-H', default='0.0.0.0',
+                            help='Bind address (default: 0.0.0.0)')
+        parser.add_argument('--port', '-P', type=int, default=1315,
+                            help='Listen port (default: 1315)')
+        parser.add_argument('--cert-host', action='append', dest='cert_hosts',
+                            help='Hostname or IP to include in the server certificate SAN. May be repeated.')
+        args = parser.parse_args()
+
+        server = Server(host=args.host, port=args.port, certificate_hosts=args.cert_hosts)
         server.start()
     except KeyboardInterrupt:
         print(f"\n{YELLOW}[!]{RESET} Server shutdown requested")

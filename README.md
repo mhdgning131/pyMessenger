@@ -21,7 +21,7 @@ A secure, terminal-based messaging application implementing modern cryptographic
 
 ## Overview
 
-pyMessenger is a client-server messaging system that provides end-to-end encryption, secure authentication, and both broadcast and private messaging capabilities. The system uses a hybrid encryption approach combining RSA and AES encryption, with SSL/TLS transport layer security.
+pyMessenger is a client-server messaging system that provides secure authentication, Signal-inspired end-to-end encryption, and both broadcast and private messaging capabilities. The server acts as a relay and public key directory: it verifies accounts, distributes public prekey bundles, and forwards encrypted packets, but it never sees plaintext chat content.
 
 ---
 
@@ -35,22 +35,35 @@ pyMessenger implements a **defense-in-depth** security model with multiple encry
 ┌─────────────────────────────────────────────────────────────┐
 │                     APPLICATION LAYER                       │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │         End-to-End Message Encryption (E2EE)          │  │
+│  │      Signal-Inspired End-to-End Messaging             │  │
 │  │                                                       │  │
-│  │  • RSA-2048 for AES key exchange                      │  │
-│  │  • AES-256-EAX for message content                    │  │
-│  │  • Per-message unique keys                            │  │
+│  │  • X25519 identity and prekey exchange                │  │
+│  │  • Ed25519-signed prekey bundles                      │  │
+│  │  • HKDF-derived session seeds                         │  │
+│  │  • AES-256-GCM ratcheting per message                 │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     TRANSPORT LAYER                         │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │            TLS/SSL Encryption (Optional)              │  │
+│  │            CA-Backed TLS Bootstrap                    │  │
 │  │                                                       │  │
-│  │  • TLS 1.2+ with strong cipher suites                 │  │
-│  │  • Protects metadata and prevents MITM                │  │
-│  │  • Certificate-based server verification              │  │
+│  │  • Private root CA signed server certificate         │  │
+│  │  • Hostname verification against ca.crt              │  │
+│  │  • Protects login, bundle upload, and packet relay    │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      SERVER ROLE                            │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Directory + Relay for Public Bundles and Packets    │  │
+│  │                                                       │  │
+│  │  • Stores public identity, signed prekey, and        │  │
+│  │    one-time prekey bundles                            │  │
+│  │  • Forwards signal_session_init and signal_message    │  │
+│  │  • Keeps account and presence metadata only           │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -59,31 +72,36 @@ pyMessenger implements a **defense-in-depth** security model with multiple encry
 
 **Client-Side Key Storage:**
 
-Each client generates and stores their RSA keypair locally with password-based encryption:
+Each client stores its long-term authentication keypair and Signal identity material locally with password-based encryption:
 
 ```md
 User Password
      │
      ▼
 [PBKDF2-SHA256] ───────────► Encryption Key (256-bit)
-100,000 iterations                    │
+600,000 iterations                    │
 Random salt (128-bit)                 │
                                       ▼
                               [AES-256-GCM]
                                       │
                                       ▼
-                          RSA Private Key (encrypted)
+                            RSA Private Key (encrypted)
                                       │
                                       ▼
-                          ~/.secure_messenger_client/keys/
-                              {username}_private.key
+                         Signal identity + prekey bundle (encrypted)
+                                  │
+                                  ▼
+                            ~/.secure_messenger_client/
+                              keys/{username}_private.key
+                              signal/{username}_signal.key
 ```
 
 **Server-Side Storage:**
 
 The server never has access to private keys. It only stores:
 - Hashed passwords (PBKDF2-SHA256, 100,000 iterations)
-- Public keys (RSA-2048)
+- Public authentication keys (RSA-2048)
+- Public Signal bundles (identity key, signed prekey, one-time prekeys)
 - Account metadata
 
 ---
@@ -141,86 +159,53 @@ pyMessenger uses a secure challenge-response protocol that avoids transmitting p
 
 ## End-to-End Message Encryption
 
-### Hybrid Encryption Scheme
+### Signal-Inspired Session Setup
 
-Messages use a hybrid approach combining asymmetric and symmetric encryption:
+Messages use a Signal-like bootstrap and ratchet flow:
 
 ```md
-┌──────────────────────────────────────────────────────────────┐
-│                     MESSAGE ENCRYPTION                        │
-└──────────────────────────────────────────────────────────────┘
+1. CLIENT LOGIN
+  - The client uploads a public bundle containing its identity key,
+    signed prekey, and one-time prekeys.
 
-1. GENERATE SYMMETRIC KEY
-   ┌────────────────────┐
-   │ Random AES-256 Key │  ◄── Cryptographically secure
-   └──────────┬─────────┘      random number generator
-              │
-              ▼
-2. ENCRYPT MESSAGE CONTENT
-   ┌──────────────┐
-   │   Plaintext  │
-   └──────┬───────┘
-          │
-          ▼
-   [AES-256-EAX]  ◄── EAX mode provides authentication
-          │           (prevents tampering)
-          ├─────► Ciphertext
-          ├─────► Nonce (96-bit)
-          └─────► Authentication Tag (128-bit)
+2. SENDER REQUESTS PEER BUNDLE
+  - The sender asks the server for the recipient's public bundle.
+  - The server returns the bundle and consumes one one-time prekey.
 
-3. ENCRYPT AES KEY FOR EACH RECIPIENT
-   ┌──────────────────┐
-   │ AES-256 Key      │
-   └────────┬─────────┘
-            │
-            ▼
-     [RSA-2048-OAEP] ◄── Using recipient's public key
-            │            (Separate encryption per recipient)
-            │
-            ├─────► Encrypted Key (Recipient A)
-            ├─────► Encrypted Key (Recipient B)
-            └─────► Encrypted Key (Recipient C)
+3. INITIAL SESSION DERIVATION
+  - The sender combines X25519 inputs from the peer bundle with its own
+    identity key material.
+  - HKDF derives a session seed in an X3DH-style handshake.
 
-4. DELIVER MESSAGE ENVELOPE
-   {
-     "ciphertext": <encrypted message>,
-     "nonce": <AES nonce>,
-     "tag": <authentication tag>,
-     "keys": {
-       "recipient_a": <encrypted AES key for A>,
-       "recipient_b": <encrypted AES key for B>
-     }
-   }
+4. SESSION INIT PACKET
+  - The first packet is sent as `signal_session_init`.
+  - It carries the first encrypted message and establishes the session state.
+
+5. RATCHETED MESSAGES
+  - Subsequent packets are sent as `signal_message`.
+  - Each message uses AES-256-GCM with a per-message derived key.
 ```
-
-**Why This Design?**
-
-- **RSA**: Secure key exchange, but too slow for large messages
-- **AES**: Fast symmetric encryption for message content
-- **EAX Mode**: Provides both encryption and authentication (AEAD)
-- **Per-Recipient Keys**: Each recipient gets individually encrypted AES key
 
 ### Decryption Process
 
 ```
-RECIPIENT RECEIVES MESSAGE ENVELOPE
-            │
-            ▼
-1. Extract encrypted AES key for this recipient
-            │
-            ▼
-2. Decrypt AES key using recipient's RSA private key
-   [RSA-2048-OAEP Decrypt]
-            │
-            ▼
-3. Decrypt message content with recovered AES key
-   [AES-256-EAX Decrypt + Verify]
-            │
-            ├─────► Verify Authentication Tag
-            │       (Ensures message not tampered)
-            │
-            └─────► Plaintext Message
+RECIPIENT RECEIVES A SIGNAL PACKET
+        │
+        ▼
+1. Match the packet to the stored peer session
+        │
+        ▼
+2. If this is a session init packet, derive the shared seed
+  using the recipient's identity key, signed prekey, and one-time prekey
+        │
+        ▼
+3. Decrypt the payload with AES-256-GCM
+        │
+        ▼
+4. Advance the message ratchet and update the session counter
 ```
+
+This is intentionally Signal-inspired rather than a full Double Ratchet implementation: it uses prekey bundles, session setup, and symmetric ratcheting, but it does not yet implement the full asynchronous recovery and out-of-order handling of production Signal.
 
 ---
 
@@ -250,9 +235,9 @@ RECIPIENT RECEIVES MESSAGE ENVELOPE
 
 | Feature | Implementation |
 |---------|----------------|
-| **Encryption Algorithm** | AES-256 in EAX mode |
-| **Key Exchange** | RSA-2048 with OAEP padding |
-| **Key Lifetime** | Single-use per message |
+| **Encryption Algorithm** | AES-256-GCM |
+| **Key Exchange** | X25519 + X3DH-style prekey handshake |
+| **Key Lifetime** | Per-session ratchet with per-message keys |
 | **Authentication** | AEAD with 128-bit tag |
 
 ### Transport Security
@@ -260,7 +245,7 @@ RECIPIENT RECEIVES MESSAGE ENVELOPE
 | Feature | Implementation |
 |---------|----------------|
 | **Protocol** | TLS 1.2+ |
-| **Certificate** | Self-signed (X.509) |
+| **Certificate** | Private CA-signed X.509 |
 | **Cipher Suites** | ECDHE+AESGCM, ECDHE+CHACHA20 |
 | **Perfect Forward Secrecy** | Ephemeral key exchange (ECDHE/DHE) |
 
@@ -282,8 +267,8 @@ pip install -r requirements.txt
 ```
 
 **Required packages:**
-- `pycryptodome`: Cryptographic operations (RSA, AES, PBKDF2)
-- `cryptography`: SSL/TLS certificate generation
+- `pycryptodome`: Legacy RSA auth keys and chunk/file-transfer crypto
+- `cryptography`: SSL/TLS certificate generation and Signal-style session crypto
 - `prompt_toolkit`: Enhanced terminal UI
 
 ### Generate SSL Certificates
@@ -292,8 +277,10 @@ pip install -r requirements.txt
 python3 generate_certificates.py
 ```
 
-This creates self-signed certificates in `~/.secure_messenger/certs/`:
-- `server.crt`: Server certificate (valid for 365 days)
+This creates a private root CA and a CA-signed server certificate in `~/.secure_messenger/certs/`:
+- `ca.crt`: Root certificate authority certificate to distribute to clients
+- `ca.key`: Root certificate authority private key, keep this secret
+- `server.crt`: Server certificate signed by the root CA (valid for 365 days)
 - `server.key`: Server private key
 
 ---
@@ -309,6 +296,7 @@ python3 server.py
 **Optional arguments:**
 - `--host <address>`: Bind address (default: 0.0.0.0)
 - `--port <port>`: Listen port (default: 1315)
+- `--cert-host <name-or-ip>`: Hostname or IP to place in the server certificate SAN. May be repeated.
 
 ### Start a Client
 
@@ -319,13 +307,16 @@ python3 client.py
 **Optional arguments:**
 - `--host <address>`: Server address (default: localhost)
 - `--port <port>`: Server port (default: 1315)
+- `--ca-cert <path>`: Path to the trusted root CA certificate (default: `~/.secure_messenger/certs/ca.crt`)
 
 ### First-Time Setup
 
 1. **Create Account**: Choose option 1 to register
 2. **Set Password**: Minimum 6 characters
-3. **Keys Generated**: RSA keypair created and stored locally
-4. **Login**: Use same credentials to authenticate
+3. **Keys Generated**: RSA auth keypair plus Signal identity and prekeys are created and stored locally
+4. **Certificate Trust**: Client validates the server using `ca.crt`
+5. **Bundle Upload**: After login, the client publishes its public Signal bundle to the server automatically
+6. **Login**: Use same credentials to authenticate
 
 ### Messaging Modes
 
@@ -404,7 +395,8 @@ pyMessenger/
 ├── client.py                 # Client application
 ├── server.py                 # Server application
 ├── user_store.py            # User database and authentication
-├── generate_certificates.py  # SSL certificate generator
+├── signal_protocol.py       # Signal-inspired session and bundle crypto
+├── generate_certificates.py  # Private CA and server certificate generator
 ├── requirements.txt         # Python dependencies
 ├── README.md               # This file
 ├── FILE_SHARING.md         # File sharing documentation
@@ -415,6 +407,8 @@ User Data:
 ~/.secure_messenger_client/
 ├── keys/
 │   └── {username}_private.key  # Encrypted private key
+├── signal/
+│   └── {username}_signal.key     # Encrypted Signal identity bundle
 └── files/
     ├── received/               # Files received from others
     └── sent/                   # Copies of sent files
@@ -424,12 +418,16 @@ User Data:
 C:\Users\[YOUR_USER]\.secure_messenger_client\
 ├── keys/
 │   └── {username}_private.key  # Encrypted private key
+├── signal/
+│   └── {username}_signal.key     # Encrypted Signal identity bundle
 └── files/
     ├── received/               # Files received from others
     └── sent/                   # Copies of sent files
 
 ~/.secure_messenger/
 ├── certs/
+│   ├── ca.crt            # Root certificate authority certificate
+│   ├── ca.key            # Root certificate authority private key
 │   ├── server.crt           # Server certificate
 │   └── server.key           # Server private key
 ├── logs/
@@ -461,27 +459,56 @@ C:\Users\[YOUR_USER]\.secure_messenger_client\
 
 | Component | Algorithm | Key Size | Notes |
 |-----------|-----------|----------|-------|
-| Asymmetric | RSA-OAEP | 2048-bit | Key exchange |
-| Symmetric | AES-EAX | 256-bit | Message encryption |
+| Asymmetric | X25519 / Ed25519 / RSA-OAEP | 25519 / 2048-bit | Signal sessions and legacy auth |
+| Symmetric | AES-GCM | 256-bit | Message encryption |
 | Hash | SHA-256 | 256-bit | All hashing operations |
-| KDF | PBKDF2-SHA256 | 256-bit output | 100,000 iterations |
-| MAC | HMAC-SHA256 | 256-bit | Challenge-response |
+| KDF | HKDF-SHA256 / PBKDF2-SHA256 | 256-bit output | Session derivation and password storage |
+| MAC | AEAD tag / HMAC-SHA256 | 128-bit / 256-bit | Message integrity and challenge-response |
 
 ### Protocol Details
 
 **Message Format:**
 ```json
 {
-  "type": "encrypted_send",
+  "type": "signal_send",
   "from": "sender_username",
-  "targets": ["recipient1", "recipient2"],
-  "ciphertext": "<base64-encoded>",
-  "nonce": "<base64-encoded>",
-  "tag": "<base64-encoded>",
-  "keys": {
-    "recipient1": "<base64-encoded-encrypted-key>",
-    "recipient2": "<base64-encoded-encrypted-key>"
+  "target": "recipient1",
+  "packet": {
+    "header": {
+      "from": "sender_username",
+      "to": "recipient1",
+      "session_id": "<base64-encoded>",
+      "counter": 1,
+      "is_private": true
+    },
+    "nonce": "<base64-encoded>",
+    "ciphertext": "<base64-encoded>"
   }
+}
+```
+
+**Bundle Relay Format:**
+```json
+{
+  "type": "signal_bundle_upload",
+  "bundle": { "...": "public bundle payload" }
+}
+```
+
+```json
+{
+  "type": "signal_bundle_request",
+  "target": "recipient1",
+  "request_id": "<random-id>"
+}
+```
+
+```json
+{
+  "type": "signal_session_init",
+  "from": "sender_username",
+  "target": "recipient1",
+  "packet": { "...": "session init payload" }
 }
 ```
 

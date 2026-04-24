@@ -5,6 +5,7 @@ import base64
 import logging
 import hmac
 import hashlib
+from copy import deepcopy
 from pathlib import Path
 from collections import defaultdict
 from Crypto.Protocol.KDF import PBKDF2
@@ -106,7 +107,9 @@ class UserStore:
             'password_hash': base64.b64encode(password_hash).decode('utf-8'),
             'public_key': base64.b64encode(pubkey_bytes).decode('utf-8'),
             'created_at': int(time.time()),
-            'last_login': None
+            'last_login': None,
+            'signal_bundle': None,
+            'signal_bundle_updated_at': None
         }
 
         self._save_users_db()
@@ -291,3 +294,50 @@ class UserStore:
         except Exception as e:
             self.logger.error(f"Failed to load private key for user {username}: {e}")
             return None
+
+    def set_signal_bundle(self, username, bundle):
+        """Store a Signal-style public bundle for a user."""
+        user = self.users_db.get(username)
+        if not user:
+            return False, "User not found."
+
+        if not bundle or not isinstance(bundle, dict):
+            return False, "Invalid Signal bundle."
+
+        required_fields = ['identity_sign_pub', 'identity_dh_pub', 'signed_prekey_pub', 'signed_prekey_signature']
+        for field_name in required_fields:
+            if not bundle.get(field_name):
+                return False, f"Missing Signal bundle field: {field_name}"
+
+        user['signal_bundle'] = bundle
+        user['signal_bundle_updated_at'] = int(time.time())
+        self._save_users_db()
+        return True, "Signal bundle stored."
+
+    def get_signal_bundle(self, username, consume_one_time=True):
+        """Return a copy of the stored Signal bundle, optionally consuming one one-time prekey."""
+        user = self.users_db.get(username)
+        if not user:
+            return None
+
+        bundle = user.get('signal_bundle')
+        if not bundle:
+            return None
+
+        bundle_copy = deepcopy(bundle)
+
+        if consume_one_time:
+            one_time_prekeys = list(user['signal_bundle'].get('one_time_prekeys') or [])
+            if one_time_prekeys:
+                one_time_prekeys.pop(0)
+                user['signal_bundle']['one_time_prekeys'] = one_time_prekeys
+                user['signal_bundle_updated_at'] = int(time.time())
+                self._save_users_db()
+                bundle_copy['one_time_prekeys'] = deepcopy(one_time_prekeys)
+
+        return bundle_copy
+
+    def has_signal_bundle(self, username):
+        """Check whether a user has uploaded a Signal bundle."""
+        user = self.users_db.get(username)
+        return bool(user and user.get('signal_bundle'))

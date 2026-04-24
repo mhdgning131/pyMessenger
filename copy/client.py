@@ -295,13 +295,11 @@ class Client:
         private_key_bytes = rsa_key.export_key()
         public_key_bytes = rsa_key.publickey().export_key()
         
-        # Save private key locally
-        self.key_manager.save_private_key(username, private_key_bytes, password)
-        print(f"  {GREEN}✓ Encryption keys generated and stored locally{RESET}")
+        print(f"  {GREEN}✓ Encryption keys generated{RESET}")
         
         # Connect to server and register
         return self.authenticate_with_server(
-            'register', username, password, public_key_bytes, rsa_key
+            'register', username, password, public_key_bytes, rsa_key, private_key_bytes
         )
 
     def login_user(self):
@@ -365,7 +363,7 @@ class Client:
             'login', username, password, public_key_bytes, rsa_key
         )
 
-    def authenticate_with_server(self, auth_type, username, password, public_key_bytes, rsa_key):
+    def authenticate_with_server(self, auth_type, username, password, public_key_bytes, rsa_key, private_key_bytes=None):
         """Authenticate with server."""
         try:
             print()
@@ -427,6 +425,16 @@ class Client:
                     temp_socket.close()
                     input(f"\n  {GRAY}Press Enter to continue...{RESET}")
                     return False
+
+                if private_key_bytes is not None:
+                    try:
+                        self.key_manager.save_private_key(username, private_key_bytes, password)
+                        print(f"  {GREEN}✓ Encryption keys stored locally{RESET}")
+                    except Exception as e:
+                        print(f"  {RED}✗ Failed to store local encryption keys: {e}{RESET}")
+                        temp_socket.close()
+                        input(f"\n  {GRAY}Press Enter to continue...{RESET}")
+                        return False
                 
                 print(f"  {GREEN}✓ {response.get('message')}{RESET}")
                 
@@ -545,7 +553,7 @@ class Client:
             self.show_chat_interface()
             
             # Create prompt session with custom style
-            self.prompt_session = PromptSession()
+            self.prompt_session = PromptSession(erase_when_done=True)
             
             # Main message loop with better input handling
             with patch_stdout():

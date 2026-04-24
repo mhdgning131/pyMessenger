@@ -12,7 +12,7 @@ from user_store import UserStore
 
 RED = "\033[91;1m"
 GREEN = "\033[92;1m"
-BLUE = "\033[94;1m"
+                self.send_json(client_socket, {
 YELLOW = "\033[93;1m"
 RESET = "\033[0m"
 
@@ -20,7 +20,7 @@ class Server:
     def __init__(self, host="0.0.0.0", port=1315):
         self.host = host
         self.port = port
-        self.server_socket = None
+            self.send_json(client_socket, {
         self.running = False
         self.clients = {}  # session_token -> {"name": name, "socket": sock, "pubkey": pubkey_bytes}
         self.user_store = UserStore()
@@ -29,7 +29,7 @@ class Server:
         
         # Room invitation tracking
         self.pending_room_invites = {}  # invite_id -> {"from": username, "to": username, "timestamp": time}
-        
+        self.send_json(client_socket, {
         # Session timeout: 24 hours
         self.SESSION_TIMEOUT = 86400
         

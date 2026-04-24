@@ -8,6 +8,7 @@ import os
 import sys
 import argparse
 import ssl
+import secrets
 from pathlib import Path
 from datetime import datetime
 from collections import deque
@@ -17,6 +18,16 @@ from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Random import get_random_bytes
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Hash import SHA256
+
+from signal_protocol import (
+    SignalKeyStore,
+    SignalKeyMaterial,
+    SignalPeerBundle,
+    SignalSession,
+    create_initiator_session,
+    accept_session_init,
+    encrypt_session_message,
+)
 
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -85,7 +96,6 @@ class KeyManager:
         self._initialize_directories()
     
     def _initialize_directories(self):
-        """Create necessary directories."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.keys_dir.mkdir(parents=True, exist_ok=True)
         self.files_dir.mkdir(parents=True, exist_ok=True)
@@ -97,12 +107,11 @@ class KeyManager:
             os.chmod(self.files_dir, 0o700)
     
     def _derive_key(self, password, salt):
-        """Derive encryption key from password."""
         return PBKDF2(
             password.encode('utf-8'),
             salt,
             32,
-            count=100000,
+            count=600000,
             hmac_hash_module=SHA256
         )
     
@@ -147,17 +156,21 @@ class KeyManager:
         return key_file.exists()
 
 class Client:
-    def __init__(self, host='localhost', port=1315):
+    def __init__(self, host='localhost', port=1315, ca_cert_path=None):
         self.host = host
         self.port = port
         self.client_socket = None
         self.running = False
         self.peer_keys = {}
         self.key_manager = KeyManager()
+        self.signal_store = SignalKeyStore()
+        self.ca_cert_path = Path(ca_cert_path).expanduser() if ca_cert_path else Path.home() / '.secure_messenger' / 'certs' / 'ca.crt'
         
         self.username = None
         self.rsa_key = None
         self.session_token = None
+        self.signal_material = None
+        self.signal_sessions = {}
         
         # Message history buffer (max 100 messages)
         self.message_history = deque(maxlen=100)
@@ -172,6 +185,10 @@ class Client:
         # Pending room invitation
         self.pending_invite = None  # {'from': username, 'invite_id': id}
         self.invite_lock = threading.Lock()
+
+        # Pending request-response matching for Signal bundle fetches
+        self.pending_requests = {}
+        self.pending_requests_lock = threading.Lock()
         
         # File transfer tracking
         self.pending_file_offers = {}  # file_id -> {'from': username, 'filename': str, 'filesize': int}
@@ -188,21 +205,18 @@ class Client:
             # Create SSL context for client
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             
-            # Load the server certificate for verification
-            cert_dir = Path.home() / '.secure_messenger' / 'certs'
-            cert_file = cert_dir / 'server.crt'
+            # Load the root CA certificate for verification
+            ca_cert_file = self.ca_cert_path
             
-            if cert_file.exists():
-                # Use the server's certificate for verification
-                context.load_verify_locations(str(cert_file))
-                context.check_hostname = False  # We're using localhost/IP addresses
-                context.verify_mode = ssl.CERT_REQUIRED  # REQUIRE certificate validation
+            if ca_cert_file.exists():
+                context.load_verify_locations(cafile=str(ca_cert_file))
+                context.check_hostname = True
+                context.verify_mode = ssl.CERT_REQUIRED
                 
-                print(f"{GREEN}✓ SSL certificate loaded for validation{RESET}")
+                print(f"{GREEN}✓ Root CA loaded for server validation{RESET}")
             else:
-                # CRITICAL: Don't connect if we can't verify the server!
-                print(f"{RED}✗ Server certificate not found at {cert_file}{RESET}")
-                print(f"{YELLOW}! Run generate_certificates.py first or copy server.crt to {cert_dir}{RESET}")
+                print(f"{RED}✗ Root CA certificate not found at {ca_cert_file}{RESET}")
+                print(f"{YELLOW}! Run generate_certificates.py first to create ca.crt and server.crt{RESET}")
                 return None
             
             # Security settings - same as server
@@ -294,13 +308,11 @@ class Client:
         private_key_bytes = rsa_key.export_key()
         public_key_bytes = rsa_key.publickey().export_key()
         
-        # Save private key locally
-        self.key_manager.save_private_key(username, private_key_bytes, password)
-        print(f"  {GREEN}✓ Encryption keys generated and stored locally{RESET}")
+        print(f"  {GREEN}✓ Encryption keys generated{RESET}")
         
         # Connect to server and register
         return self.authenticate_with_server(
-            'register', username, password, public_key_bytes, rsa_key
+            'register', username, password, public_key_bytes, rsa_key, private_key_bytes
         )
 
     def login_user(self):
@@ -364,7 +376,7 @@ class Client:
             'login', username, password, public_key_bytes, rsa_key
         )
 
-    def authenticate_with_server(self, auth_type, username, password, public_key_bytes, rsa_key):
+    def authenticate_with_server(self, auth_type, username, password, public_key_bytes, rsa_key, private_key_bytes=None):
         """Authenticate with server."""
         try:
             print()
@@ -426,6 +438,16 @@ class Client:
                     temp_socket.close()
                     input(f"\n  {GRAY}Press Enter to continue...{RESET}")
                     return False
+
+                if private_key_bytes is not None:
+                    try:
+                        self.key_manager.save_private_key(username, private_key_bytes, password)
+                        print(f"  {GREEN}✓ Encryption keys stored locally{RESET}")
+                    except Exception as e:
+                        print(f"  {RED}✗ Failed to store local encryption keys: {e}{RESET}")
+                        temp_socket.close()
+                        input(f"\n  {GRAY}Press Enter to continue...{RESET}")
+                        return False
                 
                 print(f"  {GREEN}✓ {response.get('message')}{RESET}")
                 
@@ -505,10 +527,18 @@ class Client:
                 
                 print(f"  {GREEN}✓ {result.get('message')}{RESET}")
                 response = result  # Use this for session token below
+
+            # Prepare the local Signal identity bundle and publish the public bundle to the server.
+            material = self._ensure_signal_material(username, password)
+            if not self._upload_signal_bundle(temp_socket, material):
+                temp_socket.close()
+                input(f"\n  {GRAY}Press Enter to continue...{RESET}")
+                return False
             
             self.username = username
             self.rsa_key = rsa_key
             self.session_token = response.get('session_token')
+            self.signal_material = material
             self.client_socket = temp_socket
             
             return True
@@ -523,6 +553,139 @@ class Client:
             traceback.print_exc()
             input(f"\n  {GRAY}Press Enter to continue...{RESET}")
             return False
+
+    def _ensure_signal_material(self, username, password):
+        """Load or create the local Signal identity bundle for this account."""
+        material = self.signal_store.load(username, password)
+        if material is None:
+            print(f"  {CYAN}→ Generating Signal identity keys...{RESET}")
+            material = SignalKeyMaterial.generate(username)
+        else:
+            material.username = username
+            material.rotate_prekey_bundle(50)
+            print(f"  {GREEN}✓ Signal identity keys loaded and rotated{RESET}")
+
+        self.signal_store.save(username, material, password)
+        return material
+
+    def _upload_signal_bundle(self, sock, material):
+        """Upload the public Signal bundle to the server over the authenticated TLS channel."""
+        try:
+            send_json(sock, {
+                'type': 'signal_bundle_upload',
+                'bundle': material.to_public_bundle()
+            })
+
+            response = recv_json(sock)
+            if not response or response.get('type') != 'signal_bundle_ack':
+                print(f"  {RED}✗ Invalid Signal bundle response from server{RESET}")
+                return False
+
+            if not response.get('success'):
+                print(f"  {RED}✗ {response.get('message', 'Signal bundle upload failed')}{RESET}")
+                return False
+
+            print(f"  {GREEN}✓ Signal bundle synchronized with server{RESET}")
+            return True
+        except Exception as e:
+            print(f"  {RED}✗ Signal bundle upload failed: {e}{RESET}")
+            return False
+
+    def _register_pending_request(self, request_id):
+        event = threading.Event()
+        with self.pending_requests_lock:
+            self.pending_requests[request_id] = {
+                'event': event,
+                'response': None
+            }
+        return event
+
+    def _complete_pending_request(self, request_id, response):
+        with self.pending_requests_lock:
+            pending = self.pending_requests.get(request_id)
+            if not pending:
+                return
+            pending['response'] = response
+            pending['event'].set()
+
+    def _request_signal_bundle(self, target, timeout=10):
+        """Request a peer Signal bundle from the server and wait for the response."""
+        request_id = secrets.token_urlsafe(16)
+        event = self._register_pending_request(request_id)
+
+        try:
+            send_json(self.client_socket, {
+                'type': 'signal_bundle_request',
+                'target': target,
+                'request_id': request_id,
+                'from': self.username
+            })
+
+            if not event.wait(timeout):
+                with self.pending_requests_lock:
+                    self.pending_requests.pop(request_id, None)
+                return None
+
+            with self.pending_requests_lock:
+                pending = self.pending_requests.pop(request_id, None)
+
+            response = pending['response'] if pending else None
+            if not response or not response.get('success'):
+                return None
+
+            bundle = SignalPeerBundle.from_dict(target, response['bundle'])
+            bundle.verify()
+            return bundle
+        except Exception as e:
+            with self.pending_requests_lock:
+                self.pending_requests.pop(request_id, None)
+            print(f"{RED}✗ Failed to load Signal bundle for {target}: {e}{RESET}")
+            return None
+
+    def _encrypt_signal_message(self, target, plaintext, is_private):
+        """Encrypt a message for one target using a Signal-style session."""
+        session = self.signal_sessions.get(target)
+
+        if session is None:
+            peer_bundle = self._request_signal_bundle(target)
+            if peer_bundle is None:
+                self.display_message(f"{RED}⚠ Unable to fetch Signal bundle for {target}.{RESET}", 'error')
+                return False
+
+            try:
+                session, packet = create_initiator_session(
+                    self.signal_material,
+                    peer_bundle,
+                    plaintext,
+                    self.username,
+                    target,
+                    is_private,
+                )
+            except Exception as e:
+                self.display_message(f"{RED}⚠ Signal session setup failed for {target}: {e}{RESET}", 'error')
+                return False
+
+            self.signal_sessions[target] = session
+        else:
+            try:
+                packet = encrypt_session_message(
+                    session,
+                    plaintext,
+                    self.username,
+                    target,
+                    is_private,
+                )
+            except Exception as e:
+                self.display_message(f"{RED}⚠ Signal encryption failed for {target}: {e}{RESET}", 'error')
+                return False
+
+        send_json(self.client_socket, {
+            'type': 'signal_send',
+            'from': self.username,
+            'target': target,
+            'packet': packet,
+        })
+        return True
 
     def start(self):
         """Start the client."""
@@ -544,7 +707,7 @@ class Client:
             self.show_chat_interface()
             
             # Create prompt session with custom style
-            self.prompt_session = PromptSession()
+            self.prompt_session = PromptSession(erase_when_done=True)
             
             # Main message loop with better input handling
             with patch_stdout():
@@ -620,7 +783,6 @@ class Client:
             self.stop()
 
     def show_chat_interface(self):
-        """Display chat interface."""
         self.clear_screen()
         
         # Choose theme based on mode
@@ -941,34 +1103,36 @@ class Client:
 
     def encrypt_and_send_message(self, plaintext, targets):
         """Encrypt and send message."""
-        aes_key = get_random_bytes(32)
-        aes_cipher = AES.new(aes_key, AES.MODE_EAX)
-        ciphertext, tag = aes_cipher.encrypt_and_digest(plaintext)
-        nonce = aes_cipher.nonce
-        
-        keys_map = {}
-        for target in targets:
-            pub = self.peer_keys.get(target)
-            if not pub:
-                continue
-            rsa_cipher = PKCS1_OAEP.new(pub)
-            enc_key = rsa_cipher.encrypt(aes_key)
-            keys_map[target] = base64.b64encode(enc_key).decode('utf-8')
-            
-        if not keys_map:
+        if not self.signal_material:
+            self.display_message(f"{RED}⚠ Signal identity keys are not ready yet.{RESET}", 'error')
             return
-            
-        envelope = {
-            "type": "encrypted_send",
-            "from": self.username,
-            "targets": list(keys_map.keys()),
-            "ciphertext": base64.b64encode(ciphertext).decode('utf-8'),
-            "nonce": base64.b64encode(nonce).decode('utf-8'),
-            "tag": base64.b64encode(tag).decode('utf-8'),
-            "keys": keys_map
-        }
-        
-        send_json(self.client_socket, envelope)
+
+        is_private = len(targets) == 1
+        for target in targets:
+            if target == self.username:
+                continue
+            self._encrypt_signal_message(target, plaintext, is_private)
+
+    def _display_decrypted_message(self, sender, message_text, is_private):
+        """Render a decrypted chat message with mention highlighting."""
+        mentions = self.detect_mentions(message_text)
+        is_mentioned = self.username in mentions
+        highlighted_text = self.highlight_mentions(message_text, self.username)
+
+        timestamp = datetime.now().strftime("%H:%M")
+
+        if is_mentioned:
+            if is_private:
+                msg = f"{GRAY}[{timestamp}] {YELLOW}{BOLD}[{sender}]-(priv)(@mentioned you){RESET} {highlighted_text}"
+            else:
+                msg = f"{GRAY}[{timestamp}] {YELLOW}{BOLD}[{sender}](@mentioned you){RESET} {highlighted_text}"
+        else:
+            if is_private:
+                msg = f"{GRAY}[{timestamp}] {GREEN}[{sender}]-(priv){RESET} {highlighted_text}"
+            else:
+                msg = f"{GRAY}[{timestamp}] {GREEN}[{sender}]{RESET} {highlighted_text}"
+
+        self.display_message(msg, 'incoming')
     
     def send_file(self, target, file_path):
         """Send a file to target user."""
@@ -1204,6 +1368,11 @@ class Client:
                     except Exception:
                         pass
 
+                elif ptype == 'signal_bundle_response':
+                    request_id = pkg.get('request_id')
+                    if request_id:
+                        self._complete_pending_request(request_id, pkg)
+
                 elif ptype == 'encrypted_deliver':
                     sender = pkg.get('from')
                     is_private = pkg.get('is_private', False)
@@ -1220,35 +1389,43 @@ class Client:
                         
                         # Decode the message
                         message_text = plaintext.decode('utf-8')
-                        
-                        # Detect if user is mentioned
-                        mentions = self.detect_mentions(message_text)
-                        is_mentioned = self.username in mentions
-                        
-                        # Highlight mentions in the message
-                        highlighted_text = self.highlight_mentions(message_text, self.username)
-                        
-                        timestamp = datetime.now().strftime("%H:%M")
-                        
-                        # Build the message display with mention notification
-                        if is_mentioned:
-                            # User is mentioned - show special indicator and use highlighted text
-                            if is_private:
-                                msg = f"{GRAY}[{timestamp}] {YELLOW}{BOLD}[{sender}]-(priv)(@mentioned you){RESET} {highlighted_text}"
-                            else:
-                                msg = f"{GRAY}[{timestamp}] {YELLOW}{BOLD}[{sender}](@mentioned you){RESET} {highlighted_text}"
-                        else:
-                            # Normal message with mention highlighting
-                            if is_private:
-                                msg = f"{GRAY}[{timestamp}] {GREEN}[{sender}]-(priv){RESET} {highlighted_text}"
-                            else:
-                                msg = f"{GRAY}[{timestamp}] {GREEN}[{sender}]{RESET} {highlighted_text}"
-                        
-                        self.display_message(msg, 'incoming')
+                        self._display_decrypted_message(sender, message_text, is_private)
                         
                     except Exception:
                         msg = f"{RED}⚠ Decrypt failed from {sender}{RESET}"
                         self.display_message(msg, 'error')
+
+                elif ptype == 'signal_session_init':
+                    sender = pkg.get('from')
+                    try:
+                        if not self.signal_material:
+                            raise ValueError('Signal identity keys not loaded')
+
+                        session, plaintext = accept_session_init(self.signal_material, pkg)
+                        self.signal_sessions[sender] = session
+                        self._display_decrypted_message(
+                            sender,
+                            plaintext.decode('utf-8'),
+                            pkg.get('is_private', False),
+                        )
+                    except Exception as e:
+                        self.display_message(f"{RED}⚠ Signal session init failed from {sender}: {e}{RESET}", 'error')
+
+                elif ptype == 'signal_message':
+                    sender = pkg.get('from')
+                    try:
+                        session = self.signal_sessions.get(sender)
+                        if session is None:
+                            raise ValueError('No active Signal session for this peer')
+
+                        plaintext = session.decrypt_message(pkg, sender, self.username)
+                        self._display_decrypted_message(
+                            sender,
+                            plaintext.decode('utf-8'),
+                            pkg.get('is_private', False),
+                        )
+                    except Exception as e:
+                        self.display_message(f"{RED}⚠ Signal decrypt failed from {sender}: {e}{RESET}", 'error')
 
                 elif ptype == 'error':
                     msg = f"{RED}⚠ Server: {pkg.get('msg')}{RESET}"
@@ -1438,9 +1615,11 @@ if __name__ == '__main__':
                             help='Server address (default: localhost)')
         parser.add_argument('--port', '-P', type=int, default=1315,
                             help='Server port (default: 1315)')
+        parser.add_argument('--ca-cert', default=str(Path.home() / '.secure_messenger' / 'certs' / 'ca.crt'),
+                            help='Path to the trusted root CA certificate (default: ~/.secure_messenger/certs/ca.crt)')
         args = parser.parse_args()
 
-        client = Client(host=args.host, port=args.port)
+        client = Client(host=args.host, port=args.port, ca_cert_path=args.ca_cert)
         client.start()
     except KeyboardInterrupt:
         print(f"\n\n{YELLOW}⚠ Interrupted by user{RESET}")
