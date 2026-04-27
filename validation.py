@@ -415,3 +415,17 @@ def validate_dict_size(d: dict, max_size: int = 1000) -> dict:
         raise ValidationError("Dictionary too large")
 
     return d
+
+
+def validate_auth_request(auth_msg: dict) -> dict:
+    if not isinstance(auth_msg, dict):
+        raise ValidationError("Invalid auth request type")
+
+    if auth_msg.get('type') != 'auth_request':
+        raise ValidationError("Invalid auth request type")
+
+    auth_type = auth_msg.get('auth_type')
+    if auth_type not in ['register', 'login']:
+        raise ValidationError("Invalid authentication type")
+
+    return auth_msg

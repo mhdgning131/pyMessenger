@@ -10,7 +10,7 @@ import time
 import ssl
 from pathlib import Path
 from user_store import UserStore
-from validation import ValidationError, validate_username, validate_password, validate_pubkey, validate_challenge_response, validate_bundle, validate_target_user, validate_invite_id, validate_request_id, validate_message_type, validate_file_size, validate_chunk_size, validate_counter, validate_session_id, validate_file_id, validate_nonce, validate_ciphertext, validate_tag, validate_encrypted_key, validate_ratchet_pub, validate_signature, validate_host, validate_port, validate_ip_address, sanitize_filename
+from validation import ValidationError, validate_username, validate_password, validate_pubkey, validate_challenge_response, validate_bundle, validate_target_user, validate_invite_id, validate_request_id, validate_message_type, validate_file_size, validate_chunk_size, validate_counter, validate_session_id, validate_file_id, validate_nonce, validate_ciphertext, validate_tag, validate_encrypted_key, validate_ratchet_pub, validate_signature, validate_host, validate_port, validate_ip_address, sanitize_filename, validate_auth_request
 
 RED = "\033[91;1m"
 GREEN = "\033[92;1m"
