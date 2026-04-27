@@ -10,6 +10,7 @@ import time
 import ssl
 from pathlib import Path
 from user_store import UserStore
+from validation import ValidationError, validate_username, validate_password, validate_pubkey, validate_challenge_response, validate_bundle, validate_target_user, validate_invite_id, validate_request_id, validate_message_type, validate_file_size, validate_chunk_size, validate_counter, validate_session_id, validate_file_id, validate_nonce, validate_ciphertext, validate_tag, validate_encrypted_key, validate_ratchet_pub, validate_signature, validate_host, validate_port, validate_ip_address, sanitize_filename
 
 RED = "\033[91;1m"
 GREEN = "\033[92;1m"
@@ -19,8 +20,8 @@ RESET = "\033[0m"
 
 class Server:
     def __init__(self, host="0.0.0.0", port=80, certificate_hosts=None):
-        self.host = host
-        self.port = port
+        self.host = validate_host(host)
+        self.port = validate_port(port)
         self.certificate_hosts = certificate_hosts
         self.server_socket = None
         self.running = False
@@ -131,23 +132,23 @@ class Server:
         return token
 
     def handle_auth(self, client_socket, client_address):
-                                              
         try:
-                                  
             auth_msg = self.recv_json(client_socket)
             if auth_msg is None:
                 return None, None
 
-            if auth_msg.get('type') != 'auth_request':
+            try:
+                validate_auth_request(auth_msg)
+            except ValidationError as e:
                 self.send_json(client_socket, {
                     'type': 'auth_response',
                     'success': False,
-                    'message': 'Invalid authentication request'
+                    'message': str(e)
                 })
                 return None, None
 
             auth_type = auth_msg.get('auth_type')
-            
+
             if auth_type == 'register':
                 return self.handle_registration(client_socket, auth_msg)
             elif auth_type == 'login':
@@ -165,16 +166,15 @@ class Server:
             return None, None
 
     def handle_registration(self, client_socket, auth_msg):
-                                       
-        username = auth_msg.get('username')
-        password = auth_msg.get('password')
-        pubkey_b64 = auth_msg.get('pubkey')
-
-        if not username or not password or not pubkey_b64:
+        try:
+            username = validate_username(auth_msg.get('username'))
+            password = validate_password(auth_msg.get('password'))
+            pubkey_b64 = validate_pubkey(auth_msg.get('pubkey'))
+        except ValidationError as e:
             self.send_json(client_socket, {
                 'type': 'auth_response',
                 'success': False,
-                'message': 'Missing registration credentials'
+                'message': str(e)
             })
             return None, None
 
@@ -188,7 +188,6 @@ class Server:
             })
             return None, None
 
-                                 
         success, message = self.user_store.create_user_with_pubkey(
             username, password, pubkey_bytes
         )
@@ -201,9 +200,8 @@ class Server:
             })
             return None, None
 
-                        
         token = self.create_session(username)
-        
+
         self.send_json(client_socket, {
             'type': 'auth_response',
             'success': True,
@@ -215,19 +213,17 @@ class Server:
         return username, pubkey_bytes
 
     def handle_login_challenge(self, client_socket, auth_msg, client_address):
-                                              
-        username = auth_msg.get('username')
-        pubkey_b64 = auth_msg.get('pubkey')
-
-        if not username or not pubkey_b64:
+        try:
+            username = validate_username(auth_msg.get('username'))
+            pubkey_b64 = validate_pubkey(auth_msg.get('pubkey'))
+        except ValidationError as e:
             self.send_json(client_socket, {
                 'type': 'auth_response',
                 'success': False,
-                'message': 'Missing login credentials'
+                'message': str(e)
             })
             return None, None
 
-                              
         if username not in self.user_store.users_db:
             self.send_json(client_socket, {
                 'type': 'auth_response',
@@ -236,7 +232,6 @@ class Server:
             })
             return None, None
 
-                                           
         result = self.user_store.create_challenge(username)
         if not result or result[0] is None:
             self.send_json(client_socket, {
@@ -245,16 +240,15 @@ class Server:
                 'message': 'Invalid username or password.'
             })
             return None, None
-        
-        nonce, salt = result                      
-        
+
+        nonce, salt = result
+
         self.send_json(client_socket, {
             'type': 'auth_challenge',
             'nonce': nonce,
-            'salt': salt                               
+            'salt': salt
         })
 
-                                             
         response_msg = self.recv_json(client_socket)
         if not response_msg or response_msg.get('type') != 'auth_response':
             self.send_json(client_socket, {
@@ -273,7 +267,16 @@ class Server:
             })
             return None, None
 
-                                               
+        try:
+            validate_challenge_response(challenge_response)
+        except ValidationError as e:
+            self.send_json(client_socket, {
+                'type': 'auth_result',
+                'success': False,
+                'message': str(e)
+            })
+            return None, None
+
         ip_address = client_address[0] if client_address else None
         success, message = self.user_store.verify_challenge_response(
             username, challenge_response, ip_address
@@ -287,7 +290,6 @@ class Server:
             })
             return None, None
 
-                                           
         try:
             pubkey_bytes = base64.b64decode(pubkey_b64)
             stored_pubkey = base64.b64decode(
@@ -309,7 +311,6 @@ class Server:
             })
             return None, None
 
-                                                 
         token = self.create_session(username)
         self.send_json(client_socket, {
             'type': 'auth_result',
@@ -442,41 +443,44 @@ class Server:
                 ptype = pkg.get('type')
                 
                 if ptype == 'room_invite':
-                    target_user = pkg.get('target')
-                    
+                    try:
+                        target_user = validate_target_user(pkg.get('target'))
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     print(f"{BLUE}[i]{RESET} Room invite request from {client_name} to {target_user}")
-                    
+
                     invite_id = self.generate_session_token()
-                    
+
                     with self.lock:
-                                                          
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target_user:
                                 target_socket = info['socket']
                                 break
-                        
+
                         if target_socket:
-                                                  
                             self.pending_room_invites[invite_id] = {
                                 'from': client_name,
                                 'to': target_user,
                                 'timestamp': time.time()
                             }
-                            
-                                                        
+
                             success = self.send_json(target_socket, {
                                 'type': 'room_invite_request',
                                 'from': client_name,
                                 'invite_id': invite_id
                             })
-                            
+
                             if success:
                                 print(f"{GREEN}[✓]{RESET} Room invite sent: {client_name} -> {target_user}")
                             else:
                                 print(f"{RED}[x]{RESET} Failed to send invite to {target_user}")
                         else:
-                                               
                             print(f"{YELLOW}[!]{RESET} Target user {target_user} not found")
                             self.send_json(client_socket, {
                                 'type': 'room_invite_failed',
@@ -493,6 +497,16 @@ class Server:
                         })
                         continue
 
+                    try:
+                        validate_bundle(bundle)
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'signal_bundle_ack',
+                            'success': False,
+                            'message': str(e)
+                        })
+                        continue
+
                     with self.lock:
                         success, message = self.user_store.set_signal_bundle(client_name, bundle)
 
@@ -506,15 +520,15 @@ class Server:
                         print(f"{GREEN}[+]{RESET} Signal bundle stored for {client_name}")
 
                 elif ptype == 'signal_bundle_request':
-                    target_user = pkg.get('target')
-                    request_id = pkg.get('request_id')
-
-                    if not target_user or not request_id:
+                    try:
+                        target_user = validate_target_user(pkg.get('target'))
+                        request_id = validate_request_id(pkg.get('request_id'))
+                    except ValidationError as e:
                         self.send_json(client_socket, {
                             'type': 'signal_bundle_response',
-                            'request_id': request_id,
+                            'request_id': pkg.get('request_id', ''),
                             'success': False,
-                            'message': 'Invalid Signal bundle request'
+                            'message': str(e)
                         })
                         continue
 
@@ -550,7 +564,16 @@ class Server:
                         })
                         continue
 
-                    if not target or not packet:
+                    try:
+                        validate_target_user(target)
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
+                    if not packet:
                         self.send_json(client_socket, {
                             'type': 'error',
                             'msg': 'Invalid Signal packet'
@@ -577,52 +600,56 @@ class Server:
                 
                                                  
                 elif ptype == 'room_invite_response':
-                    invite_id = pkg.get('invite_id')
+                    try:
+                        invite_id = validate_invite_id(pkg.get('invite_id'))
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     accepted = pkg.get('accepted')
-                    
+
                     with self.lock:
                         invite = self.pending_room_invites.get(invite_id)
-                        
+
                         if invite and invite['to'] == client_name:
                             inviter = invite['from']
-                            
-                                                   
+
                             inviter_socket = None
                             for token, info in self.clients.items():
                                 if info['name'] == inviter:
                                     inviter_socket = info['socket']
                                     break
-                            
+
                             if accepted:
-                                                                               
                                 if inviter_socket:
                                     self.send_json(inviter_socket, {
                                         'type': 'room_accepted',
                                         'partner': client_name
                                     })
-                                
+
                                 self.send_json(client_socket, {
                                     'type': 'room_accepted',
                                     'partner': inviter
                                 })
-                                
+
                                 print(f"{GREEN}[+]{RESET} Room created: {inviter} <-> {client_name}")
                             else:
-                                                 
                                 if inviter_socket:
                                     self.send_json(inviter_socket, {
                                         'type': 'room_rejected',
                                         'user': client_name
                                     })
-                                
+
                                 print(f"{YELLOW}[!]{RESET} Room invite rejected: {inviter} -> {client_name}")
-                            
-                                                   
+
                             del self.pending_room_invites[invite_id]
 
                 elif ptype == 'encrypted_send':
                     from_name = pkg.get('from')
-                    
+
                     if from_name != client_name:
                         print(f"{RED}[!]{RESET} Identity mismatch from {client_name}")
                         self.send_json(client_socket, {
@@ -630,18 +657,32 @@ class Server:
                             'msg': 'Identity mismatch'
                         })
                         continue
-                    
-                                               
-                    ciphertext = pkg.get('ciphertext')
-                    nonce = pkg.get('nonce')
-                    tag = pkg.get('tag')
-                    keys_map = pkg.get('keys')
-                    targets = pkg.get('targets', [])
-                    
-                                                                            
+
+                    try:
+                        ciphertext = validate_ciphertext(pkg.get('ciphertext'))
+                        nonce = validate_nonce(pkg.get('nonce'))
+                        tag = validate_tag(pkg.get('tag'))
+                        keys_map = pkg.get('keys')
+                        targets = pkg.get('targets', [])
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     is_private = len(targets) == 1
 
                     for target in targets:
+                        try:
+                            validate_target_user(target)
+                        except ValidationError as e:
+                            self.send_json(client_socket, {
+                                'type': 'error',
+                                'msg': str(e)
+                            })
+                            continue
+
                         target_found = False
                         with self.lock:
                             for token, info in self.clients.items():
@@ -649,11 +690,11 @@ class Server:
                                     deliver = {
                                         'type': 'encrypted_deliver',
                                         'from': from_name,
-                                        'ciphertext': ciphertext,
-                                        'nonce': nonce,
-                                        'tag': tag,
+                                        'ciphertext': pkg.get('ciphertext'),
+                                        'nonce': pkg.get('nonce'),
+                                        'tag': pkg.get('tag'),
                                         'key': keys_map[target],
-                                        'is_private': is_private                              
+                                        'is_private': is_private
                                     }
                                     try:
                                         self.send_json(info['socket'], deliver)
@@ -661,7 +702,7 @@ class Server:
                                     except Exception as e:
                                         print(f"{RED}[x]{RESET} Error delivering: {e}")
                                     break
-                        
+
                         if not target_found:
                             self.send_json(client_socket, {
                                 'type': 'error',
@@ -670,23 +711,28 @@ class Server:
                 
                                                           
                 elif ptype == 'file_offer':
-                    target = pkg.get('target')
-                    filename = pkg.get('filename')
-                    filesize = pkg.get('filesize')
-                    file_id = pkg.get('file_id')
-                    
+                    try:
+                        target = validate_target_user(pkg.get('target'))
+                        filename = sanitize_filename(pkg.get('filename'))
+                        filesize = validate_file_size(pkg.get('filesize'))
+                        file_id = validate_file_id(pkg.get('file_id'))
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     print(f"{BLUE}[i]{RESET} File offer from {client_name} to {target}: {filename} ({filesize} bytes)")
-                    
+
                     with self.lock:
-                                                 
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target:
                                 target_socket = info['socket']
                                 break
-                        
+
                         if target_socket:
-                                                          
                             success = self.send_json(target_socket, {
                                 'type': 'file_offer',
                                 'from': client_name,
@@ -694,12 +740,11 @@ class Server:
                                 'filesize': filesize,
                                 'file_id': file_id
                             })
-                            
+
                             if success:
                                 print(f"{GREEN}[✓]{RESET} File offer relayed to {target}")
                             else:
                                 print(f"{RED}[x]{RESET} Failed to relay file offer to {target}")
-                                               
                                 self.send_json(client_socket, {
                                     'type': 'file_offer_failed',
                                     'file_id': file_id,
@@ -707,7 +752,6 @@ class Server:
                                 })
                         else:
                             print(f"{YELLOW}[!]{RESET} Target user {target} not found")
-                                                                  
                             self.send_json(client_socket, {
                                 'type': 'file_offer_failed',
                                 'file_id': file_id,
@@ -716,66 +760,77 @@ class Server:
                 
                                                       
                 elif ptype == 'file_response':
-                    file_id = pkg.get('file_id')
+                    try:
+                        file_id = validate_file_id(pkg.get('file_id'))
+                        sender = validate_target_user(pkg.get('sender'))
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     accepted = pkg.get('accepted')
-                    sender = pkg.get('sender')                               
-                    
+
                     print(f"{BLUE}[i]{RESET} File response from {client_name}: {'Accepted' if accepted else 'Rejected'} (file_id: {file_id})")
-                    
+
                     with self.lock:
-                                              
                         sender_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == sender:
                                 sender_socket = info['socket']
                                 break
-                        
+
                         if sender_socket:
-                                                        
                             self.send_json(sender_socket, {
                                 'type': 'file_response',
                                 'file_id': file_id,
                                 'accepted': accepted,
                                 'recipient': client_name
                             })
-                            
+
                             print(f"{GREEN}[✓]{RESET} File response relayed to {sender}")
                         else:
                             print(f"{YELLOW}[!]{RESET} Sender {sender} not found")
                 
                                                                
                 elif ptype == 'file_transfer':
-                    target = pkg.get('target')
-                    file_id = pkg.get('file_id')
-                    chunk_num = pkg.get('chunk_num')
-                    total_chunks = pkg.get('total_chunks')
-                    encrypted_chunk = pkg.get('encrypted_chunk')
-                    nonce = pkg.get('nonce')
-                    tag = pkg.get('tag')
-                    encrypted_key = pkg.get('encrypted_key')
-                    
+                    try:
+                        target = validate_target_user(pkg.get('target'))
+                        file_id = validate_file_id(pkg.get('file_id'))
+                        chunk_num = validate_counter(pkg.get('chunk_num'))
+                        total_chunks = validate_counter(pkg.get('total_chunks'))
+                        encrypted_chunk = validate_ciphertext(pkg.get('encrypted_chunk'))
+                        nonce = validate_nonce(pkg.get('nonce'))
+                        tag = validate_tag(pkg.get('tag'))
+                        encrypted_key = validate_encrypted_key(pkg.get('encrypted_key'))
+                    except ValidationError as e:
+                        self.send_json(client_socket, {
+                            'type': 'error',
+                            'msg': str(e)
+                        })
+                        continue
+
                     with self.lock:
-                                            
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target:
                                 target_socket = info['socket']
                                 break
-                        
+
                         if target_socket:
-                                                     
                             self.send_json(target_socket, {
                                 'type': 'file_transfer',
                                 'from': client_name,
                                 'file_id': file_id,
                                 'chunk_num': chunk_num,
                                 'total_chunks': total_chunks,
-                                'encrypted_chunk': encrypted_chunk,
-                                'nonce': nonce,
-                                'tag': tag,
-                                'encrypted_key': encrypted_key
+                                'encrypted_chunk': pkg.get('encrypted_chunk'),
+                                'nonce': pkg.get('nonce'),
+                                'tag': pkg.get('tag'),
+                                'encrypted_key': pkg.get('encrypted_key')
                             })
-                            
+
                             if chunk_num % 10 == 0 or chunk_num == total_chunks:
                                 print(f"{BLUE}[→]{RESET} Relaying file chunk {chunk_num}/{total_chunks} from {client_name} to {target}")
 

@@ -35,6 +35,8 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.formatted_text import HTML, ANSI
 from prompt_toolkit.styles import Style
 
+from validation import ValidationError, validate_username, validate_message, validate_file_path, sanitize_filename
+
 RED = "\033[91;1m"
 GREEN = "\033[92;1m"
 BLUE = "\033[94;1m"
@@ -945,22 +947,25 @@ class Client:
         command = parts[0].lower()
         
         if command == '/room' and len(parts) >= 2:
-            target = parts[1]
-            
+            try:
+                target = validate_username(parts[1])
+            except ValidationError as e:
+                print_formatted_text(ANSI(f"{RED}✗ {e}{RESET}"))
+                return
+
             if target == self.username:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ You cannot create a room with yourself.{RESET}"))
                 return
-            
+
             if target not in self.peer_keys:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' is not online.{RESET}"))
                 return
-            
-                                            
+
             send_json(self.client_socket, {
                 'type': 'room_invite',
                 'target': target
             })
-            
+
             print_formatted_text(ANSI(f"{CYAN}→ Sending room invitation to {target}...{RESET}"))
             print_formatted_text(ANSI(f"{GRAY}  Waiting for {target} to accept...{RESET}\n"))
             
@@ -1018,13 +1023,17 @@ class Client:
                 self.pending_invite = None
         
         elif command == '/msg' and len(parts) >= 3:
-            target = parts[1]
-            content = parts[2]
-            
+            try:
+                target = validate_username(parts[1])
+                content = validate_message(parts[2])
+            except ValidationError as e:
+                print_formatted_text(ANSI(f"{RED}✗ {e}{RESET}"))
+                return
+
             if target not in self.peer_keys:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' not online.{RESET}"))
                 return
-                
+
             self.encrypt_and_send_message(content.encode('utf-8'), [target])
             timestamp = datetime.now().strftime("%H:%M")
             msg_display = f"{GRAY}[{timestamp}] {MAGENTA}[To {target}]-(priv){RESET} {content}"
@@ -1112,25 +1121,23 @@ class Client:
                 print_formatted_text(ANSI(""))
         
         elif command == '/sendfile' and len(parts) >= 3:
-            target = parts[1]
-            filepath = parts[2]
-            
-                                       
+            try:
+                target = validate_username(parts[1])
+                filepath = parts[2]
+            except ValidationError as e:
+                print_formatted_text(ANSI(f"{RED}✗ {e}{RESET}"))
+                return
+
             if target not in self.peer_keys:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' is not online.{RESET}"))
                 return
-            
-                                  
-            file_path = Path(filepath).expanduser()
-            if not file_path.exists():
-                print_formatted_text(ANSI(f"{RED}✗ File not found: {filepath}{RESET}"))
+
+            try:
+                file_path = validate_file_path(filepath)
+            except ValidationError as e:
+                print_formatted_text(ANSI(f"{RED}✗ {e}{RESET}"))
                 return
-            
-            if not file_path.is_file():
-                print_formatted_text(ANSI(f"{RED}✗ Not a file: {filepath}{RESET}"))
-                return
-            
-                                                    
+
             threading.Thread(
                 target=self.send_file,
                 args=(target, file_path),
@@ -1217,9 +1224,15 @@ class Client:
             print_formatted_text(ANSI(f"{YELLOW}Unknown command. Type /help for available commands.{RESET}"))
 
     def encrypt_and_send_message(self, plaintext, targets):
-                                       
         if not self.signal_material:
             self.display_message(f"{RED}⚠ Signal identity keys are not ready yet.{RESET}", 'error')
+            return
+
+        try:
+            message_text = plaintext.decode('utf-8')
+            validate_message(message_text)
+        except (UnicodeDecodeError, ValidationError) as e:
+            self.display_message(f"{RED}✗ Invalid message: {e}{RESET}", 'error')
             return
 
         is_private = len(targets) == 1
@@ -1250,28 +1263,24 @@ class Client:
         self.display_message(msg, 'incoming')
     
     def send_file(self, target, file_path):
-                                         
         try:
             import secrets
-            
-                                     
+
             file_id = secrets.token_urlsafe(16)
-            filename = file_path.name
+            filename = sanitize_filename(file_path.name)
             filesize = file_path.stat().st_size
-            
+
             print_formatted_text(ANSI(f"\n{CYAN}→ Preparing to send file:{RESET}"))
             print_formatted_text(ANSI(f"  {WHITE}File:{RESET} {filename}"))
             print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {filesize / (1024*1024):.2f} MB"))
             print_formatted_text(ANSI(f"  {WHITE}To:{RESET} {target}\n"))
-            
-                                     
+
             with self.file_lock:
                 self.pending_file_sends[file_id] = {
                     'target': target,
                     'file_path': file_path
                 }
-            
-                             
+
             send_json(self.client_socket, {
                 'type': 'file_offer',
                 'target': target,
@@ -1279,9 +1288,9 @@ class Client:
                 'filesize': filesize,
                 'file_id': file_id
             })
-            
+
             print_formatted_text(ANSI(f"{GRAY}Waiting for {target} to accept...{RESET}\n"))
-            
+
         except Exception as e:
             print_formatted_text(ANSI(f"{RED}✗ File send error: {e}{RESET}\n"))
     
@@ -1419,16 +1428,16 @@ class Client:
     def finalize_file_transfer(self, file_id):
         try:
             transfer = self.active_file_transfers[file_id]
-            filename = transfer['filename']
-            sender = transfer['from']                       
+            filename = sanitize_filename(transfer['filename'])
+            sender = transfer['from']
             complete_data = b''
             for i in range(1, transfer['total'] + 1):
-                complete_data += transfer['chunks'][i]                                           
+                complete_data += transfer['chunks'][i]
             safe_sender = safe_path_component(sender, 'peer')
             safe_name = safe_path_component(filename, 'file')
             safe_filename = f"{safe_sender}_{safe_name}"
             save_path = self.key_manager.received_dir / safe_filename
-            
+
             counter = 1
             while save_path.exists():
                 name_parts = safe_name.rsplit('.', 1)
@@ -1438,19 +1447,18 @@ class Client:
                     safe_filename = f"{safe_sender}_{safe_name}_{counter}"
                 save_path = self.key_manager.received_dir / safe_filename
                 counter += 1
-            
+
             with open(save_path, 'wb') as f:
                 f.write(complete_data)
-            
+
             print_formatted_text(ANSI(f"\n{GREEN}✓ File received successfully!{RESET}"))
             print_formatted_text(ANSI(f"  {WHITE}From:{RESET} {sender}"))
             print_formatted_text(ANSI(f"  {WHITE}Saved as:{RESET} {safe_filename}"))
             print_formatted_text(ANSI(f"  {WHITE}Location:{RESET} {save_path}"))
             print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {len(complete_data) / (1024*1024):.2f} MB\n"))
-            
-                     
+
             del self.active_file_transfers[file_id]
-            
+
         except Exception as e:
             print_formatted_text(ANSI(f"{RED}✗ Error finalizing file transfer: {e}{RESET}\n"))
 
