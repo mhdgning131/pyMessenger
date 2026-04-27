@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Generate a private root CA and a CA-signed server certificate for pyMessenger."""
+                      
+                                                                                    
 
 import argparse
 import ipaddress
@@ -211,7 +211,7 @@ def _generate_server_material(cert_dir, ca_key, ca_cert, hostnames):
 
 
 def ensure_certificates(cert_dir, hostnames=None, force=False):
-    """Ensure a private CA and signed server certificate exist."""
+                                                                  
     cert_path = Path(cert_dir)
     cert_path.mkdir(parents=True, exist_ok=True)
 
@@ -252,7 +252,7 @@ def ensure_certificates(cert_dir, hostnames=None, force=False):
 
 
 def generate_self_signed_cert(cert_dir, hostnames=None, force=False):
-    """Backward-compatible wrapper for the old API name."""
+                                                           
     return ensure_certificates(cert_dir, hostnames=hostnames, force=force)
 
 

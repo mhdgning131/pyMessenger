@@ -29,27 +29,27 @@ class UserStore:
         
         self.users_db = self._load_users_db()
         
-        self.login_attempts = defaultdict(list)  # username -> [timestamp, timestamp, ...]
-        self.locked_accounts = {}  # username -> unlock_timestamp
+        self.login_attempts = defaultdict(list)                                           
+        self.locked_accounts = {}                                
         self.MAX_LOGIN_ATTEMPTS = 5
-        self.LOCKOUT_DURATION = 900  # 15 minutes in seconds
-        self.RATE_LIMIT_WINDOW = 300  # 5 minutes in seconds
+        self.LOCKOUT_DURATION = 900                         
+        self.RATE_LIMIT_WINDOW = 300                        
         
-        self.active_challenges = {}  # username -> {nonce, timestamp}
-        self.CHALLENGE_TIMEOUT = 300  # 5 minutes
+        self.active_challenges = {}                                  
+        self.CHALLENGE_TIMEOUT = 300             
 
     def _initialize_directories(self):
-        """Create configuration, keys, and logs directories."""
+                                                               
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.keys_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
-        if os.name != 'nt':  # Set restrictive permissions on Unix systems
+        if os.name != 'nt':                                               
             os.chmod(self.config_dir, 0o700)
             os.chmod(self.keys_dir, 0o700)
 
     def _setup_logging(self):
-        """Setup security logging."""
+                                     
         self.logger = logging.getLogger('UserStore')
         self.logger.setLevel(logging.INFO)
         handler = logging.FileHandler(self.logs_dir / 'security.log', encoding='utf-8')
@@ -58,19 +58,19 @@ class UserStore:
         self.logger.addHandler(handler)
 
     def _load_users_db(self):
-        """Load the user database from the JSON file."""
+                                                        
         if self.users_file.exists():
             try:
                 with open(self.users_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
                 self.logger.error(f"Failed to load user database: {e}")
-                # If the file exists but is empty or corrupted, return an empty dict
+                                                                                    
                 return {}
         return {}
 
     def _save_users_db(self):
-        """Save the user database to the JSON file."""
+                                                      
         try:
             with open(self.users_file, 'w', encoding='utf-8') as f:
                 json.dump(self.users_db, f, indent=4)
@@ -80,14 +80,14 @@ class UserStore:
             self.logger.error(f"Failed to save user database: {e}")
 
     def _is_valid_username(self, username):
-        """Validate usernames before they are stored or used in file paths."""
+                                                                              
         if not isinstance(username, str):
             return False
 
         return bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,62}[A-Za-z0-9])?", username))
 
     def _hash_password(self, password, salt=None):
-        """Hash a password using PBKDF2 with SHA-256."""
+                                                        
         if salt is None:
             salt = get_random_bytes(32)
         key = PBKDF2(password.encode('utf-8'), salt, 32, count=100000, hmac_hash_module=SHA256)
@@ -96,7 +96,7 @@ class UserStore:
 
 
     def create_user_with_pubkey(self, username, password, pubkey_bytes):
-        """Create a new user account with a client-provided public key."""
+                                                                          
         if not self._is_valid_username(username):
             return False, "Invalid username. Use 1-64 characters: letters, numbers, dot, underscore, or hyphen."
 
@@ -119,32 +119,32 @@ class UserStore:
         return True, "User created successfully."
 
     def _is_account_locked(self, username):
-        """Check if an account is currently locked."""
+                                                      
         if username in self.locked_accounts:
             unlock_time = self.locked_accounts[username]
             if time.time() < unlock_time:
                 remaining = int(unlock_time - time.time())
                 return True, remaining
             else:
-                # Unlock expired, remove from locked accounts
+                                                             
                 del self.locked_accounts[username]
                 self.login_attempts[username] = []
         return False, 0
 
     def _record_failed_login(self, username, ip_address=None):
-        """Record a failed login attempt and lock account if threshold exceeded."""
+                                                                                   
         current_time = time.time()
         
-        # Clean old attempts outside the rate limit window
+                                                          
         self.login_attempts[username] = [
             t for t in self.login_attempts[username]
             if current_time - t < self.RATE_LIMIT_WINDOW
         ]
         
-        # Add current failed attempt
+                                    
         self.login_attempts[username].append(current_time)
         
-        # Check if we should lock the account
+                                             
         if len(self.login_attempts[username]) >= self.MAX_LOGIN_ATTEMPTS:
             unlock_time = current_time + self.LOCKOUT_DURATION
             self.locked_accounts[username] = unlock_time
@@ -157,25 +157,25 @@ class UserStore:
         return False
 
     def _clear_login_attempts(self, username):
-        """Clear login attempts for a user after successful login."""
+                                                                     
         if username in self.login_attempts:
             del self.login_attempts[username]
         if username in self.locked_accounts:
             del self.locked_accounts[username]
 
     def create_challenge(self, username):
-        """Create authentication challenge for a user."""
-        # Generate cryptographically secure random nonce
+                                                         
+                                                        
         nonce = base64.b64encode(get_random_bytes(32)).decode('utf-8')
         
-        # Get the salt from the stored password hash
+                                                    
         user = self.users_db.get(username)
         if not user:
             return None, None
         
         stored_hash = user['password_hash']
         stored_bytes = base64.b64decode(stored_hash)
-        salt = stored_bytes[:32]  # Extract the salt
+        salt = stored_bytes[:32]                    
         salt_b64 = base64.b64encode(salt).decode('utf-8')
         
         self.active_challenges[username] = {
@@ -185,11 +185,11 @@ class UserStore:
         }
         
         self.logger.info(f"Authentication challenge created for user: {username}")
-        return nonce, salt_b64  # Return both nonce and salt
+        return nonce, salt_b64                              
 
     def verify_challenge_response(self, username, response, ip_address=None):
-        """Verify challenge-response authentication."""
-        # Check if account is locked
+                                                       
+                                    
         is_locked, remaining = self._is_account_locked(username)
         if is_locked:
             self.logger.warning(
@@ -198,18 +198,18 @@ class UserStore:
             )
             return False, f"Account locked. Try again in {remaining} seconds."
 
-        # Check if user exists
+                              
         user = self.users_db.get(username)
         if not user:
             self.logger.warning(
                 f"Authentication failed for non-existent user: {username} "
                 f"(IP: {ip_address or 'unknown'})"
             )
-            # Constant-time response to prevent username enumeration
+                                                                    
             time.sleep(0.5)
             return False, "Invalid username or password."
 
-        # Check if challenge exists and is valid
+                                                
         challenge = self.active_challenges.get(username)
         if not challenge:
             self.logger.warning(
@@ -218,7 +218,7 @@ class UserStore:
             )
             return False, "Authentication session expired. Please try again."
 
-        # Check if challenge has expired
+                                        
         if time.time() - challenge['timestamp'] > self.CHALLENGE_TIMEOUT:
             del self.active_challenges[username]
             self.logger.warning(
@@ -227,27 +227,27 @@ class UserStore:
             )
             return False, "Authentication session expired. Please try again."
 
-        # Verify the response
+                             
         try:
-            # Get stored password hash
+                                      
             stored_hash = user['password_hash']
             stored_bytes = base64.b64decode(stored_hash)
             salt = stored_bytes[:32]
             stored_key = stored_bytes[32:]
             
-            # Compute expected response: HMAC-SHA256(password_key, nonce)
+                                                                         
             nonce_bytes = challenge['nonce'].encode('utf-8')
             expected_response = hmac.new(stored_key, nonce_bytes, hashlib.sha256).digest()
             expected_response_b64 = base64.b64encode(expected_response).decode('utf-8')
             
-            # Constant-time comparison
+                                      
             if not hmac.compare_digest(response, expected_response_b64):
                 self.logger.warning(
                     f"Authentication failed - invalid response: {username} "
                     f"(IP: {ip_address or 'unknown'})"
                 )
                 
-                # Record failed attempt
+                                       
                 locked = self._record_failed_login(username, ip_address)
                 if locked:
                     return False, f"Account locked due to too many failed attempts. Try again in {self.LOCKOUT_DURATION // 60} minutes."
@@ -255,13 +255,13 @@ class UserStore:
                 attempts_left = self.MAX_LOGIN_ATTEMPTS - len(self.login_attempts[username])
                 return False, f"Invalid username or password. {attempts_left} attempts remaining."
 
-            # Success! Clear the challenge
+                                          
             del self.active_challenges[username]
             
-            # Clear failed login attempts
+                                         
             self._clear_login_attempts(username)
             
-            # Update last login
+                               
             self.users_db[username]['last_login'] = int(time.time())
             self._save_users_db()
             
@@ -278,7 +278,7 @@ class UserStore:
 
 
     def load_private_key(self, username, password):
-        """Load and decrypt the user's private key."""
+                                                      
         key_file = self.keys_dir / f"{username}_private.key"
         if not key_file.exists():
             self.logger.error(f"Private key file not found for user: {username}")
@@ -298,7 +298,7 @@ class UserStore:
             return None
 
     def set_signal_bundle(self, username, bundle):
-        """Store a Signal-style public bundle for a user."""
+                                                            
         user = self.users_db.get(username)
         if not user:
             return False, "User not found."
@@ -317,7 +317,7 @@ class UserStore:
         return True, "Signal bundle stored."
 
     def get_signal_bundle(self, username, consume_one_time=True):
-        """Return a copy of the stored Signal bundle, optionally consuming one one-time prekey."""
+                                                                                                  
         user = self.users_db.get(username)
         if not user:
             return None
@@ -340,6 +340,6 @@ class UserStore:
         return bundle_copy
 
     def has_signal_bundle(self, username):
-        """Check whether a user has uploaded a Signal bundle."""
+                                                                
         user = self.users_db.get(username)
         return bool(user and user.get('signal_bundle'))

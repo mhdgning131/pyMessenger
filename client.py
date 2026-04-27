@@ -59,13 +59,13 @@ CHECKMARK = "✓"
 X_MARK = "✗"
 
 def send_json(sock, obj):
-    """Send JSON with length prefix."""
+                                       
     data = json.dumps(obj).encode('utf-8')
     header = struct.pack('>I', len(data))
     sock.sendall(header + data)
 
 def recv_json(sock):
-    """Receive JSON with length prefix."""
+                                          
     header = b''
     while len(header) < 4:
         chunk = sock.recv(4 - len(header))
@@ -86,7 +86,7 @@ def recv_json(sock):
 
 
 def safe_path_component(value, fallback='item'):
-    """Return a filesystem-safe path component derived from an arbitrary value."""
+                                                                                  
     text = Path(str(value)).name
     safe = ''.join(ch for ch in text if ch.isalnum() or ch in ('-', '_', '.'))
     safe = safe.strip(' ._-')
@@ -101,7 +101,7 @@ def safe_path_component(value, fallback='item'):
 
 
 class KeyManager:
-    """Manages local key storage for the client."""
+                                                   
     
     def __init__(self):
         self.config_dir = Path.home() / '.secure_messenger_client'
@@ -132,7 +132,7 @@ class KeyManager:
         )
     
     def save_private_key(self, username, private_key, password):
-        """Save encrypted private key to disk."""
+                                                 
         safe_username = safe_path_component(username, 'user')
         salt = get_random_bytes(16)
         encryption_key = self._derive_key(password, salt)
@@ -147,7 +147,7 @@ class KeyManager:
             os.chmod(key_file, 0o600)
     
     def load_private_key(self, username, password):
-        """Load and decrypt private key from disk."""
+                                                     
         safe_username = safe_path_component(username, 'user')
         key_file = self.keys_dir / f"{safe_username}_private.key"
         if not key_file.exists():
@@ -169,7 +169,7 @@ class KeyManager:
             return None
     
     def key_exists(self, username):
-        """Check if a key file exists for username."""
+                                                      
         safe_username = safe_path_component(username, 'user')
         key_file = self.keys_dir / f"{safe_username}_private.key"
         return key_file.exists()
@@ -191,45 +191,45 @@ class Client:
         self.signal_material = None
         self.signal_sessions = {}
         
-        # Message history buffer (max 100 messages)
+                                                   
         self.message_history = deque(maxlen=100)
         self.history_lock = threading.Lock()
         
-        # Prompt session for better input handling
+                                                  
         self.prompt_session = None
         
-        # Room mode: None = broadcast, username = private room
+                                                              
         self.current_room = None
         
-        # Pending room invitation
-        self.pending_invite = None  # {'from': username, 'invite_id': id}
+                                 
+        self.pending_invite = None                                       
         self.invite_lock = threading.Lock()
 
-        # Pending request-response matching for Signal bundle fetches
+                                                                     
         self.pending_requests = {}
         self.pending_requests_lock = threading.Lock()
         
-        # File transfer tracking
-        self.pending_file_offers = {}  # file_id -> {'from': username, 'filename': str, 'filesize': int}
-        self.active_file_transfers = {}  # file_id -> {'chunks': {}, 'total': int, 'filename': str, 'from': str}
-        self.pending_file_sends = {}  # file_id -> {'target': username, 'file_path': Path}
+                                
+        self.pending_file_offers = {}                                                                   
+        self.active_file_transfers = {}                                                                         
+        self.pending_file_sends = {}                                                      
         self.file_lock = threading.Lock()
         self._remote_peer_fingerprint = None
         
-        # SSL/TLS setup
+                       
         self.ssl_context = self._setup_ssl()
 
     def _is_local_host(self):
-        """Check whether the client targets a local development server."""
+                                                                          
         host = str(self.host).strip().lower()
         return host in {'localhost', '127.0.0.1', '::1'}
 
     def _origin_file(self):
-        """Return the sidecar file that records how the trust anchor was obtained."""
+                                                                                     
         return self.ca_cert_path.with_name(self.ca_cert_path.name + '.origin')
 
     def _load_trust_origin(self):
-        """Load a saved remote certificate fingerprint, if one exists."""
+                                                                         
         try:
             origin_file = self._origin_file()
             if not origin_file.exists():
@@ -244,12 +244,12 @@ class Client:
             return None
 
     def _certificate_fingerprint(self, pem_text):
-        """Compute a stable SHA-256 fingerprint for a PEM certificate."""
+                                                                         
         der_bytes = ssl.PEM_cert_to_DER_cert(pem_text)
         return hashlib.sha256(der_bytes).hexdigest()
 
     def _bootstrap_remote_certificate(self, ca_cert_file):
-        """Fetch and pin the server certificate when no local trust anchor is available."""
+                                                                                           
         try:
             print(f"{YELLOW}! No local CA certificate found; pinning the remote server certificate from {self.host}:{self.port}{RESET}")
             server_cert_pem = ssl.get_server_certificate((self.host, self.port))
@@ -273,12 +273,12 @@ class Client:
             return False
 
     def _setup_ssl(self):
-        """Setup SSL/TLS context for client connections."""
+                                                           
         try:
-            # Create SSL context for client
+                                           
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             
-            # Load the root CA certificate for verification
+                                                           
             ca_cert_file = self.ca_cert_path
             saved_fingerprint = self._load_trust_origin()
 
@@ -323,7 +323,7 @@ class Client:
                     print(f"{YELLOW}! Copy the server's ca.crt to that path or pass --ca-cert{RESET}")
                 return None
             
-            # Security settings - same as server
+                                                
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.set_ciphers('ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS')
             
@@ -333,11 +333,11 @@ class Client:
             return None
 
     def clear_screen(self):
-        """Clear terminal."""
+                             
         os.system('cls' if os.name == 'nt' else 'clear')
 
     def show_banner(self):
-        """Display banner."""
+                             
         self.clear_screen()
         
         print()
@@ -348,7 +348,7 @@ class Client:
         print()
 
     def authentication_menu(self):
-        """Display authentication menu."""
+                                          
         self.show_banner()
         
         print(f"{WHITE}{BOLD}  Please select an option:{RESET}\n")
@@ -371,7 +371,7 @@ class Client:
                 print(f"{RED}  ✗ Invalid choice. Please try again.{RESET}")
 
     def register_user(self):
-        """Handle user registration."""
+                                       
         self.clear_screen()
         
         print()
@@ -407,20 +407,20 @@ class Client:
         
         print(f"\n  {CYAN}→ Generating encryption keys...{RESET}")
         
-        # Generate RSA keypair locally
+                                      
         rsa_key = RSA.generate(2048)
         private_key_bytes = rsa_key.export_key()
         public_key_bytes = rsa_key.publickey().export_key()
         
         print(f"  {GREEN}✓ Encryption keys generated{RESET}")
         
-        # Connect to server and register
+                                        
         return self.authenticate_with_server(
             'register', username, password, public_key_bytes, rsa_key, private_key_bytes
         )
 
     def login_user(self):
-        """Handle user login."""
+                                
         self.clear_screen()
         
         print()
@@ -435,7 +435,7 @@ class Client:
         if username.lower() == '!back':
             return False
         
-        # Check if keys exist for this username FIRST
+                                                     
         if not self.key_manager.key_exists(username):
             print(f"\n  {RED}✗ No account found for username '{username}'{RESET}")
             print(f"\n{YELLOW}  Would you like to:{RESET}")
@@ -457,7 +457,7 @@ class Client:
         
         print(f"\n  {CYAN}→ Loading local encryption keys...{RESET}")
         
-        # Load private key from local storage
+                                             
         rsa_key = self.key_manager.load_private_key(username, password)
         
         if rsa_key is None:
@@ -475,21 +475,21 @@ class Client:
         print(f"  {GREEN}✓ Local keys loaded{RESET}")
         public_key_bytes = rsa_key.publickey().export_key()
         
-        # Authenticate with server
+                                  
         return self.authenticate_with_server(
             'login', username, password, public_key_bytes, rsa_key
         )
 
     def authenticate_with_server(self, auth_type, username, password, public_key_bytes, rsa_key, private_key_bytes=None):
-        """Authenticate with server."""
+                                       
         try:
             print()
             print(f"  {CYAN}→ Connecting to server...{RESET}")
             
-            # Connect to server
+                               
             temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             
-            # Wrap socket with SSL if available
+                                               
             if self.ssl_context:
                 try:
                     temp_socket = self.ssl_context.wrap_socket(
@@ -511,7 +511,7 @@ class Client:
 
                     print(f"  {GREEN}✓ Secure connection established (TLS/SSL){RESET}")
                     
-                    # Display connection security info
+                                                      
                     cipher = temp_socket.cipher()
                     if cipher:
                         print(f"  {BLUE}  Cipher: {cipher[0]}{RESET}")
@@ -526,11 +526,11 @@ class Client:
                 input(f"\n  {GRAY}Press Enter to continue...{RESET}")
                 return False
             
-            # Send initial authentication request
+                                                 
             print(f"  {CYAN}→ Initiating authentication...{RESET}")
             
             if auth_type == 'register':
-                # Registration still uses password (for initial setup)
+                                                                      
                 auth_request = {
                     'type': 'auth_request',
                     'auth_type': 'register',
@@ -540,7 +540,7 @@ class Client:
                 }
                 send_json(temp_socket, auth_request)
                 
-                # Receive response
+                                  
                 response = recv_json(temp_socket)
                 
                 if not response or response.get('type') != 'auth_response':
@@ -567,8 +567,8 @@ class Client:
                 
                 print(f"  {GREEN}✓ {response.get('message')}{RESET}")
                 
-            else:  # Login with challenge-response
-                # Step 1: Send login request (no password!)
+            else:                                 
+                                                           
                 auth_request = {
                     'type': 'auth_request',
                     'auth_type': 'login',
@@ -577,7 +577,7 @@ class Client:
                 }
                 send_json(temp_socket, auth_request)
                 
-                # Step 2: Receive challenge from server
+                                                       
                 challenge_msg = recv_json(temp_socket)
                 
                 if not challenge_msg or challenge_msg.get('type') != 'auth_challenge':
@@ -598,34 +598,34 @@ class Client:
 
                 print(f"  {CYAN}→ Solving authentication challenge...{RESET}")
                 
-                # Step 3: Compute challenge response using password
-                # Derive the same key as stored on server
+                                                                   
+                                                         
                 import hmac
                 
                 salt = base64.b64decode(salt_b64)
                 
-                # Derive password key (same as server has stored)
+                                                                 
                 password_key = PBKDF2(
                     password.encode('utf-8'),
-                    salt,  # Server's salt!
+                    salt,                  
                     32,
                     count=100000,
                     hmac_hash_module=SHA256
                 )
                 
-                # Compute HMAC response
+                                       
                 nonce_bytes = nonce.encode('utf-8')
                 response_hash = hmac.new(password_key, nonce_bytes, hashlib.sha256).digest()
                 response_b64 = base64.b64encode(response_hash).decode('utf-8')
                 
-                # Step 4: Send challenge response
+                                                 
                 response_msg = {
                     'type': 'auth_response',
                     'response': response_b64
                 }
                 send_json(temp_socket, response_msg)
                 
-                # Step 5: Receive authentication result
+                                                       
                 result = recv_json(temp_socket)
                 
                 if not result or result.get('type') != 'auth_result':
@@ -641,9 +641,9 @@ class Client:
                     return False
                 
                 print(f"  {GREEN}✓ {result.get('message')}{RESET}")
-                response = result  # Use this for session token below
+                response = result                                    
 
-            # Prepare the local Signal identity bundle and publish the public bundle to the server.
+                                                                                                   
             material = self._ensure_signal_material(username, password)
             if not self._upload_signal_bundle(temp_socket, material):
                 temp_socket.close()
@@ -670,7 +670,7 @@ class Client:
             return False
 
     def _ensure_signal_material(self, username, password):
-        """Load or create the local Signal identity bundle for this account."""
+                                                                               
         material = self.signal_store.load(username, password)
         if material is None:
             print(f"  {CYAN}→ Generating Signal identity keys...{RESET}")
@@ -684,7 +684,7 @@ class Client:
         return material
 
     def _upload_signal_bundle(self, sock, material):
-        """Upload the public Signal bundle to the server over the authenticated TLS channel."""
+                                                                                               
         try:
             send_json(sock, {
                 'type': 'signal_bundle_upload',
@@ -724,7 +724,7 @@ class Client:
             pending['event'].set()
 
     def _request_signal_bundle(self, target, timeout=10):
-        """Request a peer Signal bundle from the server and wait for the response."""
+                                                                                     
         request_id = secrets.token_urlsafe(16)
         event = self._register_pending_request(request_id)
 
@@ -758,7 +758,7 @@ class Client:
             return None
 
     def _encrypt_signal_message(self, target, plaintext, is_private):
-        """Encrypt a message for one target using a Signal-style session."""
+                                                                            
         session = self.signal_sessions.get(target)
 
         if session is None:
@@ -803,7 +803,7 @@ class Client:
         return True
 
     def start(self):
-        """Start the client."""
+                               
         if not self.authentication_menu():
             print(f"\n{BLUE}{BOX_TL}{BOX_H * 13}{BOX_TR}")
             print(f"{BLUE}{BOX_V}{RESET} Goodbye! 👋 {BLUE}{BOX_V}{RESET}")
@@ -813,28 +813,28 @@ class Client:
         try:
             self.running = True
             
-            # Start receiver thread
+                                   
             receive_thread = threading.Thread(target=self.receive_messages)
             receive_thread.daemon = True
             receive_thread.start()
             
-            # Display chat interface
+                                    
             self.show_chat_interface()
             
-            # Create prompt session with custom style
+                                                     
             self.prompt_session = PromptSession(erase_when_done=True)
             
-            # Main message loop with better input handling
+                                                          
             with patch_stdout():
                 while self.running:
                     try:
-                        # Dynamic prompt based on current mode
+                                                              
                         if self.current_room:
                             prompt_html = f'<ansibrightmagenta>to @{self.current_room} ></ansibrightmagenta> '
                         else:
                             prompt_html = '<ansibrightcyan>></ansibrightcyan> '
                         
-                        # Use prompt_toolkit for better input handling
+                                                                      
                         message = self.prompt_session.prompt(
                             HTML(prompt_html),
                             multiline=False
@@ -850,9 +850,9 @@ class Client:
                             self.handle_command(message)
                             continue
 
-                        # Determine targets based on mode
+                                                         
                         if self.current_room:
-                            # Private room mode - send only to room user
+                                                                        
                             if self.current_room not in self.peer_keys:
                                 self.display_message(f"{YELLOW}⚠ User '{self.current_room}' is offline. Leaving room.{RESET}", 'system')
                                 self.current_room = None
@@ -862,7 +862,7 @@ class Client:
                             msg_color = MAGENTA
                             msg_prefix = f"[To {self.current_room}]"
                         else:
-                            # Broadcast mode - send to all peers
+                                                                
                             targets = [n for n in self.peer_keys.keys() if n != self.username]
                             if not targets:
                                 self.display_message(f"{YELLOW}⚠ No recipients available.{RESET}", 'system')
@@ -871,13 +871,13 @@ class Client:
                             msg_prefix = "[You]"
 
                         try:
-                            # Properly encode message with error handling for emojis
+                                                                                    
                             message_bytes = message.encode('utf-8', errors='surrogatepass')
                         except Exception as e:
                             self.display_message(f"{RED}⚠ Could not encode message: {e}{RESET}", 'error')
                             continue
 
-                        # Display the formatted message with timestamp
+                                                                      
                         timestamp = datetime.now().strftime("%H:%M")
                         msg_display = f"{GRAY}[{timestamp}] {msg_color}{msg_prefix}{RESET} {message}"
                         self.display_message(msg_display, 'outgoing')
@@ -900,15 +900,15 @@ class Client:
     def show_chat_interface(self):
         self.clear_screen()
         
-        # Choose theme based on mode
+                                    
         if self.current_room:
-            # Private room mode - MAGENTA/RED theme
+                                                   
             theme_color = MAGENTA
             border_color = RED
             mode_text = f"PRIVATE CHAT with {self.current_room}"
             mode_indicator = f"{RED}[PRIVATE ROOM: {self.current_room}]{RESET}"
         else:
-            # Broadcast mode - CYAN/BLUE theme
+                                              
             theme_color = CYAN
             border_color = CYAN
             mode_text = "pyMESSENGER"
@@ -940,7 +940,7 @@ class Client:
         print_formatted_text(ANSI(""))
 
     def handle_command(self, message):
-        """Handle commands."""
+                              
         parts = message.split(' ', 2)
         command = parts[0].lower()
         
@@ -955,7 +955,7 @@ class Client:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' is not online.{RESET}"))
                 return
             
-            # Send room invitation to target
+                                            
             send_json(self.client_socket, {
                 'type': 'room_invite',
                 'target': target
@@ -976,7 +976,7 @@ class Client:
             print_formatted_text(ANSI(f"{GRAY}  Returned to broadcast mode.{RESET}\n"))
         
         elif command == '/accept':
-            # Accept pending room invitation
+                                            
             with self.invite_lock:
                 if not self.pending_invite:
                     print_formatted_text(ANSI(f"{YELLOW}⚠ No pending room invitation.{RESET}"))
@@ -985,7 +985,7 @@ class Client:
                 invite_id = self.pending_invite['invite_id']
                 sender = self.pending_invite['from']
             
-            # Send acceptance to server
+                                       
             send_json(self.client_socket, {
                 'type': 'room_invite_response',
                 'invite_id': invite_id,
@@ -995,7 +995,7 @@ class Client:
             print_formatted_text(ANSI(f"{GREEN}✓ Accepting room invitation from {sender}...{RESET}\n"))
         
         elif command == '/decline':
-            # Decline pending room invitation
+                                             
             with self.invite_lock:
                 if not self.pending_invite:
                     print_formatted_text(ANSI(f"{YELLOW}⚠ No pending room invitation.{RESET}"))
@@ -1004,7 +1004,7 @@ class Client:
                 invite_id = self.pending_invite['invite_id']
                 sender = self.pending_invite['from']
             
-            # Send rejection to server
+                                      
             send_json(self.client_socket, {
                 'type': 'room_invite_response',
                 'invite_id': invite_id,
@@ -1013,7 +1013,7 @@ class Client:
             
             print_formatted_text(ANSI(f"{YELLOW}✗ Declined room invitation from {sender}.{RESET}\n"))
             
-            # Clear pending invite
+                                  
             with self.invite_lock:
                 self.pending_invite = None
         
@@ -1031,12 +1031,12 @@ class Client:
             self.display_message(msg_display, 'outgoing')
             
         elif command == '/history':
-            # Display message history
-            count = 20  # Default to last 20 messages
+                                     
+            count = 20                               
             if len(parts) > 1:
                 try:
                     count = int(parts[1])
-                    count = min(count, 100)  # Max 100 messages
+                    count = min(count, 100)                    
                 except ValueError:
                     print_formatted_text(ANSI(f"{RED}Invalid number. Usage: /history [count]{RESET}"))
                     return
@@ -1055,7 +1055,7 @@ class Client:
             print_formatted_text(ANSI(f"{GRAY}{'─' * 60}{RESET}\n"))
             
         elif command == '/help':
-            # Determine theme color
+                                   
             theme_color = MAGENTA if self.current_room else CYAN
             
             print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Available Commands:{RESET}"))
@@ -1104,7 +1104,7 @@ class Client:
                 print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Online users:{RESET}"))
                 for i, user in enumerate(self.peer_keys.keys(), 1):
                     if user != self.username:
-                        # Highlight current room user
+                                                     
                         if user == self.current_room:
                             print_formatted_text(ANSI(f"  {theme_color}{i}.{RESET} {user} {MAGENTA}(in room){RESET}"))
                         else:
@@ -1115,12 +1115,12 @@ class Client:
             target = parts[1]
             filepath = parts[2]
             
-            # Check if target is online
+                                       
             if target not in self.peer_keys:
                 print_formatted_text(ANSI(f"{YELLOW}⚠ User '{target}' is not online.{RESET}"))
                 return
             
-            # Check if file exists
+                                  
             file_path = Path(filepath).expanduser()
             if not file_path.exists():
                 print_formatted_text(ANSI(f"{RED}✗ File not found: {filepath}{RESET}"))
@@ -1130,7 +1130,7 @@ class Client:
                 print_formatted_text(ANSI(f"{RED}✗ Not a file: {filepath}{RESET}"))
                 return
             
-            # Start file transfer in separate thread
+                                                    
             threading.Thread(
                 target=self.send_file,
                 args=(target, file_path),
@@ -1138,13 +1138,13 @@ class Client:
             ).start()
         
         elif command == '/acceptfile':
-            # Accept pending file offer
+                                       
             with self.file_lock:
                 if not self.pending_file_offers:
                     print_formatted_text(ANSI(f"{YELLOW}⚠ No pending file offers.{RESET}"))
                     return
                 
-                # Show pending offers
+                                     
                 if len(parts) < 2:
                     print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Pending file offers:{RESET}"))
                     for i, (file_id, offer) in enumerate(self.pending_file_offers.items(), 1):
@@ -1162,7 +1162,7 @@ class Client:
                     print_formatted_text(ANSI(f"{RED}✗ Invalid selection{RESET}"))
                     return
             
-            # Send acceptance
+                             
             send_json(self.client_socket, {
                 'type': 'file_response',
                 'file_id': file_id,
@@ -1174,13 +1174,13 @@ class Client:
             print_formatted_text(ANSI(f"{GRAY}  Waiting for transfer to begin...{RESET}\n"))
         
         elif command == '/rejectfile':
-            # Reject pending file offer
+                                       
             with self.file_lock:
                 if not self.pending_file_offers:
                     print_formatted_text(ANSI(f"{YELLOW}⚠ No pending file offers.{RESET}"))
                     return
                 
-                # Show pending offers
+                                     
                 if len(parts) < 2:
                     print_formatted_text(ANSI(f"\n{WHITE}{BOLD}Pending file offers:{RESET}"))
                     for i, (file_id, offer) in enumerate(self.pending_file_offers.items(), 1):
@@ -1197,7 +1197,7 @@ class Client:
                     print_formatted_text(ANSI(f"{RED}✗ Invalid selection{RESET}"))
                     return
             
-            # Send rejection
+                            
             send_json(self.client_socket, {
                 'type': 'file_response',
                 'file_id': file_id,
@@ -1217,7 +1217,7 @@ class Client:
             print_formatted_text(ANSI(f"{YELLOW}Unknown command. Type /help for available commands.{RESET}"))
 
     def encrypt_and_send_message(self, plaintext, targets):
-        """Encrypt and send message."""
+                                       
         if not self.signal_material:
             self.display_message(f"{RED}⚠ Signal identity keys are not ready yet.{RESET}", 'error')
             return
@@ -1229,7 +1229,7 @@ class Client:
             self._encrypt_signal_message(target, plaintext, is_private)
 
     def _display_decrypted_message(self, sender, message_text, is_private):
-        """Render a decrypted chat message with mention highlighting."""
+                                                                        
         mentions = self.detect_mentions(message_text)
         is_mentioned = self.username in mentions
         highlighted_text = self.highlight_mentions(message_text, self.username)
@@ -1250,11 +1250,11 @@ class Client:
         self.display_message(msg, 'incoming')
     
     def send_file(self, target, file_path):
-        """Send a file to target user."""
+                                         
         try:
             import secrets
             
-            # Generate unique file ID
+                                     
             file_id = secrets.token_urlsafe(16)
             filename = file_path.name
             filesize = file_path.stat().st_size
@@ -1264,14 +1264,14 @@ class Client:
             print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {filesize / (1024*1024):.2f} MB"))
             print_formatted_text(ANSI(f"  {WHITE}To:{RESET} {target}\n"))
             
-            # Store pending send info
+                                     
             with self.file_lock:
                 self.pending_file_sends[file_id] = {
                     'target': target,
                     'file_path': file_path
                 }
             
-            # Send file offer
+                             
             send_json(self.client_socket, {
                 'type': 'file_offer',
                 'target': target,
@@ -1286,9 +1286,9 @@ class Client:
             print_formatted_text(ANSI(f"{RED}✗ File send error: {e}{RESET}\n"))
     
     def send_file_chunks(self, target, file_path, file_id):
-        """Send file in encrypted chunks."""
+                                            
         try:
-            CHUNK_SIZE = 64 * 1024  # 64 KB chunks
+            CHUNK_SIZE = 64 * 1024                
             
             with open(file_path, 'rb') as f:
                 file_data = f.read()
@@ -1302,12 +1302,12 @@ class Client:
                 end = min(start + CHUNK_SIZE, len(file_data))
                 chunk = file_data[start:end]
                 
-                # Encrypt chunk with AES
+                                        
                 aes_key = get_random_bytes(32)
                 aes_cipher = AES.new(aes_key, AES.MODE_EAX)
                 encrypted_chunk, tag = aes_cipher.encrypt_and_digest(chunk)
                 
-                # Encrypt AES key with recipient's public key
+                                                             
                 pub = self.peer_keys.get(target)
                 if not pub:
                     print_formatted_text(ANSI(f"{RED}✗ Recipient went offline{RESET}\n"))
@@ -1316,7 +1316,7 @@ class Client:
                 rsa_cipher = PKCS1_OAEP.new(pub)
                 encrypted_key = rsa_cipher.encrypt(aes_key)
                 
-                # Send encrypted chunk
+                                      
                 send_json(self.client_socket, {
                     'type': 'file_transfer',
                     'target': target,
@@ -1329,14 +1329,14 @@ class Client:
                     'encrypted_key': base64.b64encode(encrypted_key).decode('utf-8')
                 })
                 
-                # Show progress
+                               
                 if chunk_num % 10 == 0 or chunk_num == total_chunks:
                     progress = (chunk_num / total_chunks) * 100
                     print_formatted_text(ANSI(f"{GRAY}  Progress: {progress:.1f}% ({chunk_num}/{total_chunks}){RESET}"))
             
             print_formatted_text(ANSI(f"{GREEN}✓ File sent successfully!{RESET}\n"))
             
-            # Save to sent folder for record
+                                            
             sent_path = self.key_manager.sent_dir / safe_path_component(file_path.name, 'sent_file')
             import shutil
             shutil.copy2(file_path, sent_path)
@@ -1348,7 +1348,7 @@ class Client:
             return False
     
     def send_file_chunks_by_id(self, file_id):
-        """Send file chunks using stored file_id."""
+                                                    
         try:
             with self.file_lock:
                 if file_id not in self.pending_file_sends:
@@ -1367,7 +1367,7 @@ class Client:
             return False
     
     def receive_file_chunk(self, pkg):
-        """Receive and process file chunk."""
+                                             
         try:
             file_id = pkg.get('file_id')
             sender = pkg.get('from')
@@ -1378,18 +1378,18 @@ class Client:
             tag = base64.b64decode(pkg.get('tag'))
             encrypted_key = base64.b64decode(pkg.get('encrypted_key'))
             
-            # Decrypt AES key
+                             
             rsa_cipher = PKCS1_OAEP.new(self.rsa_key)
             aes_key = rsa_cipher.decrypt(encrypted_key)
             
-            # Decrypt chunk
+                           
             aes_cipher = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
             chunk = aes_cipher.decrypt_and_verify(encrypted_chunk, tag)
             
-            # Store chunk
+                         
             with self.file_lock:
                 if file_id not in self.active_file_transfers:
-                    # Initialize transfer tracking
+                                                  
                     offer = self.pending_file_offers.get(file_id, {})
                     self.active_file_transfers[file_id] = {
                         'chunks': {},
@@ -1397,19 +1397,19 @@ class Client:
                         'filename': offer.get('filename', 'unknown'),
                         'from': sender
                     }
-                    # Remove from pending
+                                         
                     self.pending_file_offers.pop(file_id, None)
                 
                 self.active_file_transfers[file_id]['chunks'][chunk_num] = chunk
                 
                 received = len(self.active_file_transfers[file_id]['chunks'])
                 
-                # Show progress
+                               
                 if chunk_num % 10 == 0 or chunk_num == total_chunks:
                     progress = (received / total_chunks) * 100
                     print_formatted_text(ANSI(f"{GRAY}  Receiving: {progress:.1f}% ({received}/{total_chunks}){RESET}"))
                 
-                # Check if complete
+                                   
                 if received == total_chunks:
                     self.finalize_file_transfer(file_id)
         
@@ -1417,24 +1417,18 @@ class Client:
             print_formatted_text(ANSI(f"{RED}✗ Error receiving file chunk: {e}{RESET}\n"))
     
     def finalize_file_transfer(self, file_id):
-        """Assemble and save complete file."""
         try:
             transfer = self.active_file_transfers[file_id]
             filename = transfer['filename']
-            sender = transfer['from']
-            
-            # Assemble chunks in order
+            sender = transfer['from']                       
             complete_data = b''
             for i in range(1, transfer['total'] + 1):
-                complete_data += transfer['chunks'][i]
-            
-            # Save file to received folder with sender prefix
+                complete_data += transfer['chunks'][i]                                           
             safe_sender = safe_path_component(sender, 'peer')
             safe_name = safe_path_component(filename, 'file')
             safe_filename = f"{safe_sender}_{safe_name}"
             save_path = self.key_manager.received_dir / safe_filename
             
-            # Handle duplicate filenames
             counter = 1
             while save_path.exists():
                 name_parts = safe_name.rsplit('.', 1)
@@ -1454,14 +1448,14 @@ class Client:
             print_formatted_text(ANSI(f"  {WHITE}Location:{RESET} {save_path}"))
             print_formatted_text(ANSI(f"  {WHITE}Size:{RESET} {len(complete_data) / (1024*1024):.2f} MB\n"))
             
-            # Cleanup
+                     
             del self.active_file_transfers[file_id]
             
         except Exception as e:
             print_formatted_text(ANSI(f"{RED}✗ Error finalizing file transfer: {e}{RESET}\n"))
 
     def receive_messages(self):
-        """Handle incoming messages."""
+                                       
         while self.running:
             try:
                 pkg = recv_json(self.client_socket)
@@ -1504,7 +1498,7 @@ class Client:
                         aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
                         plaintext = aes.decrypt_and_verify(ciphertext, tag)
                         
-                        # Decode the message
+                                            
                         message_text = plaintext.decode('utf-8')
                         self._display_decrypted_message(sender, message_text, is_private)
                         
@@ -1548,21 +1542,21 @@ class Client:
                     msg = f"{RED}⚠ Server: {pkg.get('msg')}{RESET}"
                     self.display_message(msg, 'error')
                 
-                # Handle room invitation request
+                                                
                 elif ptype == 'room_invite_request':
                     sender = pkg.get('from')
                     invite_id = pkg.get('invite_id')
                     
                     print(f"\n{BLUE}[DEBUG]{RESET} Received room invite from {sender}, invite_id: {invite_id}")
                     
-                    # Store pending invite
+                                          
                     with self.invite_lock:
                         self.pending_invite = {
                             'from': sender,
                             'invite_id': invite_id
                         }
                     
-                    # Display invitation notification (non-blocking)
+                                                                    
                     print_formatted_text(ANSI(""))
                     print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
                     print_formatted_text(ANSI(f"{MAGENTA}{BOLD}  -> PRIVATE ROOM INVITATION{RESET}"))
@@ -1574,11 +1568,11 @@ class Client:
                     print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
                     print_formatted_text(ANSI(""))
                 
-                # Handle room invitation accepted
+                                                 
                 elif ptype == 'room_accepted':
                     partner = pkg.get('partner')
                     
-                    # Enter private room
+                                        
                     self.current_room = partner
                     self.show_chat_interface()
                     
@@ -1586,23 +1580,23 @@ class Client:
                     print_formatted_text(ANSI(f"{GRAY}  All messages will now be sent only to {partner}.{RESET}"))
                     print_formatted_text(ANSI(f"{GRAY}  Type /leave to return to broadcast mode.{RESET}\n"))
                     
-                    # Clear pending invite
+                                          
                     with self.invite_lock:
                         self.pending_invite = None
                 
-                # Handle room invitation rejected
+                                                 
                 elif ptype == 'room_rejected':
                     user = pkg.get('user')
                     
                     print_formatted_text(ANSI(f"\n{RED}✗ {user} declined your room invitation.{RESET}\n"))
                 
-                # Handle room invitation failed
+                                               
                 elif ptype == 'room_invite_failed':
                     reason = pkg.get('reason', 'Unknown error')
                     
                     print_formatted_text(ANSI(f"\n{RED}✗ Room invitation failed: {reason}{RESET}\n"))
                 
-                # Handle incoming file offer
+                                            
                 elif ptype == 'file_offer':
                     sender = pkg.get('from')
                     filename = pkg.get('filename')
@@ -1632,14 +1626,14 @@ class Client:
                     print_formatted_text(ANSI(f"{GRAY}{BOLD}{'═' * 60}{RESET}"))
                     print_formatted_text(ANSI(""))
                 
-                # Handle file offer failed
+                                          
                 elif ptype == 'file_offer_failed':
                     file_id = pkg.get('file_id')
                     reason = pkg.get('reason', 'Unknown error')
                     
                     print_formatted_text(ANSI(f"{RED}✗ File offer failed: {reason}{RESET}\n"))
                 
-                # Handle file response (accept/reject from recipient)
+                                                                     
                 elif ptype == 'file_response':
                     file_id = pkg.get('file_id')
                     accepted = pkg.get('accepted')
@@ -1647,11 +1641,7 @@ class Client:
                     
                     if accepted:
                         print_formatted_text(ANSI(f"{GREEN}✓ {recipient} accepted your file!{RESET}"))
-                        print_formatted_text(ANSI(f"{CYAN}→ Starting file transfer...{RESET}\n"))
-                        
-                        # Start sending file chunks in a separate thread
-                        # We need to find the file path - for now, we'll need to track this
-                        # In a real implementation, store the file_id -> file_path mapping
+                        print_formatted_text(ANSI(f"{CYAN}→ Starting file transfer...{RESET}\n"))                                                           
                         threading.Thread(
                             target=self.send_file_chunks_by_id,
                             args=(file_id,),
@@ -1660,7 +1650,7 @@ class Client:
                     else:
                         print_formatted_text(ANSI(f"{YELLOW}✗ {recipient} rejected your file.{RESET}\n"))
                 
-                # Handle incoming file chunk
+                                            
                 elif ptype == 'file_transfer':
                     self.receive_file_chunk(pkg)
 
@@ -1669,7 +1659,7 @@ class Client:
                     break
 
     def stop(self):
-        """Stop client."""
+                          
         self.running = False
         
         if self.client_socket:
@@ -1680,7 +1670,7 @@ class Client:
         print(f"{BLUE}Connection closed{RESET}")
 
     def add_to_history(self, message, msg_type='info'):
-        """Add message to history buffer."""
+                                            
         with self.history_lock:
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.message_history.append({
@@ -1690,39 +1680,22 @@ class Client:
             })
     
     def detect_mentions(self, text):
-        """
-        Detect @mentions in a message.
-        Returns list of mentioned usernames.
-        """
-        import re
-        # Match @username (alphanumeric, underscore, hyphen)
+        import re                                                 
         mentions = re.findall(r'@([a-zA-Z0-9_-]+)', text)
-        return list(set(mentions))  # Remove duplicates
+        return list(set(mentions))                     
     
-    def highlight_mentions(self, text, my_username):
-        """
-        Highlight @mentions in text.
-        If user is mentioned, highlight their name in YELLOW BOLD.
-        Other mentions are highlighted in CYAN.
-        """
+    def highlight_mentions(self, text, my_username):     
         import re
-        
         def replace_mention(match):
             username = match.group(1)
             if username.lower() == my_username.lower():
-                # User is mentioned - highlight in YELLOW BOLD
                 return f"{YELLOW}{BOLD}@{username}{RESET}"
             else:
-                # Someone else mentioned - highlight in CYAN
                 return f"{CYAN}@{username}{RESET}"
-        
         return re.sub(r'@([a-zA-Z0-9_-]+)', replace_mention, text)
     
-    def display_message(self, message, msg_type='info'):
-        """Display a message and add to history."""
-        self.add_to_history(message, msg_type)
-        
-        # Use prompt_toolkit's print for proper ANSI handling on Windows
+    def display_message(self, message, msg_type='info'):                                  
+        self.add_to_history(message, msg_type)                                                       
         print_formatted_text(ANSI(message))
 
 if __name__ == '__main__':

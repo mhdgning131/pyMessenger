@@ -24,22 +24,18 @@ class Server:
         self.certificate_hosts = certificate_hosts
         self.server_socket = None
         self.running = False
-        self.clients = {}  # session_token -> {"name": name, "socket": sock, "pubkey": pubkey_bytes}
+        self.clients = {}                                                                           
         self.user_store = UserStore()
-        self.sessions = {}  # session_token -> {"username": name, "expires": timestamp}
-        self.lock = threading.Lock()
-        
-        # Room invitation tracking
-        self.pending_room_invites = {}  # invite_id -> {"from": username, "to": username, "timestamp": time}
-        
-        # Session timeout: 24 hours
+        self.sessions = {}                                                             
+        self.lock = threading.Lock()                        
+        self.pending_room_invites = {}              
         self.SESSION_TIMEOUT = 86400
         
-        # SSL/TLS setup
+                       
         self.ssl_context = self._setup_ssl()
 
     def _setup_ssl(self):
-        """Setup SSL/TLS context for secure connections."""
+                                                           
         cert_dir = Path.home() / '.secure_messenger' / 'certs'
         
         try:
@@ -51,12 +47,12 @@ class Server:
             return None
         
         try:
-            # Create SSL context
+                                
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(certfile=str(cert_file), keyfile=str(key_file))
             context.load_verify_locations(cafile=str(ca_cert_file))
             
-            # Security settings
+                               
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.set_ciphers('ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS')
             
@@ -69,7 +65,7 @@ class Server:
             return None
 
     def send_json(self, sock, obj):
-        """Send JSON object with length prefix."""
+                                                  
         try:
             data = json.dumps(obj).encode('utf-8')
             header = struct.pack('>I', len(data))
@@ -82,7 +78,7 @@ class Server:
             return False
 
     def recv_json(self, sock):
-        """Receive JSON object with length prefix."""
+                                                     
         try:
             header = b''
             while len(header) < 4:
@@ -107,17 +103,17 @@ class Server:
             print(f"{RED}[x]{RESET} Error receiving JSON: {e}")
             return None
     def generate_session_token(self):
-        """Generate a cryptographically secure session token."""
+                                                                
         return secrets.token_urlsafe(32)
 
     def validate_session(self, token):
-        """Validate a session token and return username if valid."""
+                                                                    
         with self.lock:
             session = self.sessions.get(token)
             if not session:
                 return None
             
-            # Check if session has expired
+                                          
             if time.time() > session['expires']:
                 del self.sessions[token]
                 return None
@@ -125,7 +121,7 @@ class Server:
             return session['username']
 
     def create_session(self, username):
-        """Create a new session for a user."""
+                                              
         token = self.generate_session_token()
         with self.lock:
             self.sessions[token] = {
@@ -135,9 +131,9 @@ class Server:
         return token
 
     def handle_auth(self, client_socket, client_address):
-        """Handle authentication handshake."""
+                                              
         try:
-            # Receive auth request
+                                  
             auth_msg = self.recv_json(client_socket)
             if auth_msg is None:
                 return None, None
@@ -169,7 +165,7 @@ class Server:
             return None, None
 
     def handle_registration(self, client_socket, auth_msg):
-        """Handle user registration."""
+                                       
         username = auth_msg.get('username')
         password = auth_msg.get('password')
         pubkey_b64 = auth_msg.get('pubkey')
@@ -192,7 +188,7 @@ class Server:
             })
             return None, None
 
-        # Create user in database
+                                 
         success, message = self.user_store.create_user_with_pubkey(
             username, password, pubkey_bytes
         )
@@ -205,7 +201,7 @@ class Server:
             })
             return None, None
 
-        # Create session
+                        
         token = self.create_session(username)
         
         self.send_json(client_socket, {
@@ -219,7 +215,7 @@ class Server:
         return username, pubkey_bytes
 
     def handle_login_challenge(self, client_socket, auth_msg, client_address):
-        """Handle challenge-response login."""
+                                              
         username = auth_msg.get('username')
         pubkey_b64 = auth_msg.get('pubkey')
 
@@ -231,7 +227,7 @@ class Server:
             })
             return None, None
 
-        # Check if user exists
+                              
         if username not in self.user_store.users_db:
             self.send_json(client_socket, {
                 'type': 'auth_response',
@@ -240,7 +236,7 @@ class Server:
             })
             return None, None
 
-        # Step 1: Create and send challenge
+                                           
         result = self.user_store.create_challenge(username)
         if not result or result[0] is None:
             self.send_json(client_socket, {
@@ -250,15 +246,15 @@ class Server:
             })
             return None, None
         
-        nonce, salt = result  # Unpack both values
+        nonce, salt = result                      
         
         self.send_json(client_socket, {
             'type': 'auth_challenge',
             'nonce': nonce,
-            'salt': salt  # Send the salt to the client
+            'salt': salt                               
         })
 
-        # Step 2: Wait for challenge response
+                                             
         response_msg = self.recv_json(client_socket)
         if not response_msg or response_msg.get('type') != 'auth_response':
             self.send_json(client_socket, {
@@ -277,7 +273,7 @@ class Server:
             })
             return None, None
 
-        # Step 3: Verify the challenge response
+                                               
         ip_address = client_address[0] if client_address else None
         success, message = self.user_store.verify_challenge_response(
             username, challenge_response, ip_address
@@ -291,7 +287,7 @@ class Server:
             })
             return None, None
 
-        # Step 4: Verify public key matches
+                                           
         try:
             pubkey_bytes = base64.b64decode(pubkey_b64)
             stored_pubkey = base64.b64decode(
@@ -313,7 +309,7 @@ class Server:
             })
             return None, None
 
-        # Step 5: Create session and send success
+                                                 
         token = self.create_session(username)
         self.send_json(client_socket, {
             'type': 'auth_result',
@@ -326,7 +322,6 @@ class Server:
         return username, pubkey_bytes
 
     def start(self):
-        """Start the server."""
         try:
             if not self.ssl_context:
                 print(f"{RED}[x]{RESET} SSL/TLS setup failed. Run generate_certificates.py before starting the server.")
@@ -348,8 +343,6 @@ class Server:
             while self.running:
                 try:
                     client_socket, client_address = self.server_socket.accept()
-                    
-                    # Wrap socket with SSL if enabled
                     if self.ssl_context:
                         try:
                             client_socket = self.ssl_context.wrap_socket(
@@ -379,19 +372,19 @@ class Server:
             self.stop()
 
     def handle_client(self, client_socket, client_address):
-        """Handle client connection."""
+                                       
         client_name = None
         session_token = None
         
         try:
-            # Handle authentication
+                                   
             client_name, pubkey_bytes = self.handle_auth(client_socket, client_address)
             
             if not client_name or not pubkey_bytes:
                 client_socket.close()
                 return
 
-            # Check if user already connected
+                                             
             with self.lock:
                 for token, info in self.clients.items():
                     if info['name'] == client_name:
@@ -403,7 +396,7 @@ class Server:
                         client_socket.close()
                         return
 
-                # Generate session token for this connection
+                                                            
                 session_token = self.generate_session_token()
                 self.clients[session_token] = {
                     'name': client_name,
@@ -411,7 +404,7 @@ class Server:
                     'pubkey': pubkey_bytes
                 }
 
-                # Send existing clients to new client
+                                                     
                 for token, info in self.clients.items():
                     if token != session_token:
                         try:
@@ -423,7 +416,7 @@ class Server:
                         except Exception as e:
                             print(f"{RED}[x]{RESET} Error sending key: {e}")
 
-                # Broadcast new client to existing clients
+                                                          
                 announce = {
                     'type': 'pubkey_announce',
                     'name': client_name,
@@ -439,7 +432,7 @@ class Server:
 
             print(f"{GREEN}[+]{RESET} {client_name} ready for messaging")
 
-            # Main message loop
+                               
             while True:
                 pkg = self.recv_json(client_socket)
                 if pkg is None:
@@ -456,7 +449,7 @@ class Server:
                     invite_id = self.generate_session_token()
                     
                     with self.lock:
-                        # Là on Check if target est online
+                                                          
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target_user:
@@ -464,14 +457,14 @@ class Server:
                                 break
                         
                         if target_socket:
-                            # Store pending invite
+                                                  
                             self.pending_room_invites[invite_id] = {
                                 'from': client_name,
                                 'to': target_user,
                                 'timestamp': time.time()
                             }
                             
-                            # Send invite to target user
+                                                        
                             success = self.send_json(target_socket, {
                                 'type': 'room_invite_request',
                                 'from': client_name,
@@ -483,7 +476,7 @@ class Server:
                             else:
                                 print(f"{RED}[x]{RESET} Failed to send invite to {target_user}")
                         else:
-                            # Target not online
+                                               
                             print(f"{YELLOW}[!]{RESET} Target user {target_user} not found")
                             self.send_json(client_socket, {
                                 'type': 'room_invite_failed',
@@ -582,7 +575,7 @@ class Server:
                             'msg': f'User {target} not found'
                         })
                 
-                # Handle room invitation response
+                                                 
                 elif ptype == 'room_invite_response':
                     invite_id = pkg.get('invite_id')
                     accepted = pkg.get('accepted')
@@ -593,7 +586,7 @@ class Server:
                         if invite and invite['to'] == client_name:
                             inviter = invite['from']
                             
-                            # Find inviter's socket
+                                                   
                             inviter_socket = None
                             for token, info in self.clients.items():
                                 if info['name'] == inviter:
@@ -601,7 +594,7 @@ class Server:
                                     break
                             
                             if accepted:
-                                # Both users accept - notify both to enter room
+                                                                               
                                 if inviter_socket:
                                     self.send_json(inviter_socket, {
                                         'type': 'room_accepted',
@@ -615,7 +608,7 @@ class Server:
                                 
                                 print(f"{GREEN}[+]{RESET} Room created: {inviter} <-> {client_name}")
                             else:
-                                # Invite rejected
+                                                 
                                 if inviter_socket:
                                     self.send_json(inviter_socket, {
                                         'type': 'room_rejected',
@@ -624,7 +617,7 @@ class Server:
                                 
                                 print(f"{YELLOW}[!]{RESET} Room invite rejected: {inviter} -> {client_name}")
                             
-                            # Remove pending invite
+                                                   
                             del self.pending_room_invites[invite_id]
 
                 elif ptype == 'encrypted_send':
@@ -638,14 +631,14 @@ class Server:
                         })
                         continue
                     
-                    # Forward encrypted message
+                                               
                     ciphertext = pkg.get('ciphertext')
                     nonce = pkg.get('nonce')
                     tag = pkg.get('tag')
                     keys_map = pkg.get('keys')
                     targets = pkg.get('targets', [])
                     
-                    # Determine if this is a private message (only 1 target)
+                                                                            
                     is_private = len(targets) == 1
 
                     for target in targets:
@@ -660,7 +653,7 @@ class Server:
                                         'nonce': nonce,
                                         'tag': tag,
                                         'key': keys_map[target],
-                                        'is_private': is_private  # Add private chat indicator
+                                        'is_private': is_private                              
                                     }
                                     try:
                                         self.send_json(info['socket'], deliver)
@@ -675,7 +668,7 @@ class Server:
                                 'msg': f'User {target} not found'
                             })
                 
-                # Handle file offer - relay to target user
+                                                          
                 elif ptype == 'file_offer':
                     target = pkg.get('target')
                     filename = pkg.get('filename')
@@ -685,7 +678,7 @@ class Server:
                     print(f"{BLUE}[i]{RESET} File offer from {client_name} to {target}: {filename} ({filesize} bytes)")
                     
                     with self.lock:
-                        # Find target user socket
+                                                 
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target:
@@ -693,7 +686,7 @@ class Server:
                                 break
                         
                         if target_socket:
-                            # Forward file offer to target
+                                                          
                             success = self.send_json(target_socket, {
                                 'type': 'file_offer',
                                 'from': client_name,
@@ -706,7 +699,7 @@ class Server:
                                 print(f"{GREEN}[✓]{RESET} File offer relayed to {target}")
                             else:
                                 print(f"{RED}[x]{RESET} Failed to relay file offer to {target}")
-                                # Notify sender
+                                               
                                 self.send_json(client_socket, {
                                     'type': 'file_offer_failed',
                                     'file_id': file_id,
@@ -714,23 +707,23 @@ class Server:
                                 })
                         else:
                             print(f"{YELLOW}[!]{RESET} Target user {target} not found")
-                            # Notify sender that target is offline
+                                                                  
                             self.send_json(client_socket, {
                                 'type': 'file_offer_failed',
                                 'file_id': file_id,
                                 'reason': 'User not online'
                             })
                 
-                # Handle file response (accept/reject)
+                                                      
                 elif ptype == 'file_response':
                     file_id = pkg.get('file_id')
                     accepted = pkg.get('accepted')
-                    sender = pkg.get('sender')  # Original sender of the file
+                    sender = pkg.get('sender')                               
                     
                     print(f"{BLUE}[i]{RESET} File response from {client_name}: {'Accepted' if accepted else 'Rejected'} (file_id: {file_id})")
                     
                     with self.lock:
-                        # Find sender's socket
+                                              
                         sender_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == sender:
@@ -738,7 +731,7 @@ class Server:
                                 break
                         
                         if sender_socket:
-                            # Forward response to sender
+                                                        
                             self.send_json(sender_socket, {
                                 'type': 'file_response',
                                 'file_id': file_id,
@@ -750,7 +743,7 @@ class Server:
                         else:
                             print(f"{YELLOW}[!]{RESET} Sender {sender} not found")
                 
-                # Handle file transfer - relay encrypted chunks
+                                                               
                 elif ptype == 'file_transfer':
                     target = pkg.get('target')
                     file_id = pkg.get('file_id')
@@ -762,7 +755,7 @@ class Server:
                     encrypted_key = pkg.get('encrypted_key')
                     
                     with self.lock:
-                        # Find target socket
+                                            
                         target_socket = None
                         for token, info in self.clients.items():
                             if info['name'] == target:
@@ -770,7 +763,7 @@ class Server:
                                 break
                         
                         if target_socket:
-                            # Forward encrypted chunk
+                                                     
                             self.send_json(target_socket, {
                                 'type': 'file_transfer',
                                 'from': client_name,
@@ -802,7 +795,7 @@ class Server:
             print(f"{RED}[-]{RESET} Connection closed: {client_name or 'unknown'}")
 
     def stop(self):
-        """Stop the server."""
+                              
         self.running = False
         
         with self.lock:

@@ -88,7 +88,7 @@ def _bundle_fingerprint(identity_sign_public: bytes, identity_dh_public: bytes) 
 
 @dataclass
 class SignalKeyMaterial:
-    """Local Signal-style key material for a single user."""
+                                                            
 
     username: str
     identity_sign_private: ed25519.Ed25519PrivateKey
@@ -174,12 +174,7 @@ class SignalKeyMaterial:
             self.one_time_prekeys_private[key_id] = x25519.X25519PrivateKey.generate()
             self.next_prekey_id += 1
 
-    def rotate_prekey_bundle(self, one_time_prekey_count: int = 50) -> None:
-        """Rotate the signed prekey and replace the one-time prekey pool.
-
-        The long-term identity keys stay stable, while the medium-term and one-time
-        prekeys are refreshed on each login.
-        """
+    def rotate_prekey_bundle(self, one_time_prekey_count: int = 50) -> None:  
         self.signed_prekey_private = x25519.X25519PrivateKey.generate()
         self.signed_prekey_id = secrets.randbits(31)
         signed_prekey_public = _raw_public_bytes(self.signed_prekey_private.public_key())
@@ -221,7 +216,7 @@ class SignalKeyMaterial:
 
 @dataclass
 class SignalPeerBundle:
-    """Public bundle fetched from the server for a remote peer."""
+                                                                  
 
     username: str
     identity_sign_pub: bytes
@@ -267,7 +262,7 @@ class SignalPeerBundle:
 
 @dataclass
 class SignalSession:
-    """Per-peer symmetric session state."""
+                                           
 
     peer_username: str
     session_id: str
@@ -447,7 +442,7 @@ class SignalSession:
 
 
 class SignalKeyStore:
-    """Encrypted local storage for Signal key material."""
+                                                          
 
     def __init__(self, base_dir: Path | None = None):
         self.config_dir = base_dir or (Path.home() / ".secure_messenger_client")
@@ -503,7 +498,7 @@ class SignalKeyStore:
 
 
 def create_x3dh_seed(local_material: SignalKeyMaterial, peer_bundle: SignalPeerBundle) -> tuple[bytes, dict[str, Any]]:
-    """Compute the X3DH-style shared secret seed and handshake transcript."""
+                                                                             
     ephemeral_private = x25519.X25519PrivateKey.generate()
     ephemeral_public = _raw_public_bytes(ephemeral_private.public_key())
 
