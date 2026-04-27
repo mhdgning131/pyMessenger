@@ -1,6 +1,6 @@
-# Unicast Secure Messenger
+# pyMessenger
 
-A secure messaging app with end-to-end encryption.
+A secure messaging app with military end-to-end encryption.
 
 ## What it does
 
