@@ -52,8 +52,6 @@ Received files go to:
 
 Uses X25519, Ed25519, AES-256-GCM, SHA-256, and PBKDF2. Passwords aren't sent after you register. Messages have replay protection and perfect forward secrecy.
 
-**Note:** This is a learning project, not for serious security use. For real secure messaging, use Signal or Wire.
-
 ## Files in the project
 
 ```
